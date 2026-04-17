@@ -22,11 +22,39 @@ def run() -> None:
     ).to_dict()
     assert stable["mode_inference"]["active_mode"] == "build"
 
+    approval_gated = pipeline.run(
+        FamilyTurnInput(
+            current_message="Apply the patch to the repository files now.",
+            active_project="family-scaffold",
+            current_task="apply repository patch",
+            recent_anchor_cue="family-scaffold",
+            verification_status="passed",
+            action_required=True,
+            execution_intent="apply repository patch",
+            current_environment_state="dry pipeline only",
+        )
+    ).to_dict()
+    assert approval_gated["execution_decision"]["decision"] == "require_approval"
+
+    denied = pipeline.run(
+        FamilyTurnInput(
+            current_message="Install pytest as a dependency for this project.",
+            active_project="family-scaffold",
+            current_task="install pytest dependency",
+            recent_anchor_cue="family-scaffold",
+            verification_status="passed",
+            action_required=True,
+            execution_intent="install pytest dependency",
+            current_environment_state="dry pipeline only",
+        )
+    ).to_dict()
+    assert denied["execution_decision"]["decision"] == "deny"
+
     disagreement = pipeline.run(
         FamilyTurnInput(
-            current_message="Both routes still seem plausible, so keep the disagreement open while we continue.",
+            current_message="Apply the patch, but both routes still seem plausible, so keep the disagreement open.",
             active_project="family-scaffold",
-            current_task="hold open the current disagreement",
+            current_task="apply repository patch while disagreement stays open",
             recent_anchor_cue="family-scaffold",
             disagreement_events=[
                 {
@@ -40,11 +68,13 @@ def run() -> None:
                 }
             ],
             verification_status="passed",
-            action_required=False,
+            action_required=True,
+            execution_intent="apply repository patch",
             current_environment_state="multiple plausible routes remain",
         )
     ).to_dict()
     assert disagreement["router_decision"]["epistemic_resolution_claimed"] is False
+    assert disagreement["execution_decision"]["decision"] == "require_approval"
 
     verification = pipeline.run(
         FamilyTurnInput(

@@ -69,6 +69,9 @@ class FamilyTurnResult:
     mirror_summary: dict[str, Any]
     effort_route: dict[str, Any]
     router_decision: dict[str, Any]
+    execution_request: dict[str, Any]
+    execution_decision: dict[str, Any]
+    approval_request: dict[str, Any]
     verification_record: dict[str, Any]
     delta_log_event: dict[str, Any]
     compression_summary: dict[str, Any]
@@ -84,6 +87,9 @@ class FamilyTurnResult:
             "mirror_summary",
             "effort_route",
             "router_decision",
+            "execution_request",
+            "execution_decision",
+            "approval_request",
             "verification_record",
             "delta_log_event",
             "compression_summary",

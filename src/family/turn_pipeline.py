@@ -10,6 +10,8 @@ from family.delta_log import DeltaLogBuilder
 from family.disagreement_types import DisagreementEvent
 from family.effort_allocator import EffortAllocator
 from family.effort_types import EffortInput
+from family.execution_gate import ExecutionGate
+from family.execution_types import ExecutionRequest
 from family.live_state import LiveStateBuilder
 from family.mirror_bridge import MirrorBridge
 from family.mode_inference import ModeInference
@@ -29,6 +31,7 @@ class FamilyTurnPipeline:
     mirror_bridge: MirrorBridge = field(default_factory=MirrorBridge)
     effort_allocator: EffortAllocator = field(default_factory=EffortAllocator)
     router: FamilyRouterDecision = field(default_factory=FamilyRouterDecision)
+    execution_gate: ExecutionGate = field(default_factory=ExecutionGate)
     delta_builder: DeltaLogBuilder = field(default_factory=DeltaLogBuilder)
     compression_layer: CompressionLayer = field(default_factory=CompressionLayer)
     reactivation_layer: ReactivationLayer = field(default_factory=ReactivationLayer)
@@ -163,7 +166,24 @@ class FamilyTurnPipeline:
             )
         ).to_dict()
 
-        verification_record = self._verification_placeholder(turn_input)
+        execution_request = {}
+        execution_decision = {}
+        approval_request = {}
+        if turn_input.action_required:
+            execution_request_obj = self._build_execution_request(turn_input)
+            execution_request = execution_request_obj.to_dict()
+            execution_decision_obj = self.execution_gate.assess(execution_request_obj)
+            execution_decision = execution_decision_obj.to_dict()
+            if execution_decision_obj.decision == "require_approval":
+                approval_request = self.execution_gate.build_approval_request(
+                    execution_request_obj,
+                    execution_decision_obj,
+                ).to_dict()
+
+        verification_record = self._verification_placeholder(
+            turn_input,
+            execution_decision=execution_decision,
+        )
 
         previous_live_state = (
             dict(turn_input.previous_live_state)
@@ -211,8 +231,19 @@ class FamilyTurnPipeline:
 
         notes = [
             "dry pipeline canary composed family-layer stages without real execution",
-            "verification output remains compact and non-authoritative because no action was executed",
         ]
+        if execution_decision:
+            notes.append(
+                f"execution gate result: {execution_decision['decision']} ({execution_decision['recommended_zone']})"
+            )
+            if execution_decision["decision"] == "require_approval":
+                notes.append("runtime action remained approval-gated and was not executed")
+            elif execution_decision["decision"] == "deny":
+                notes.append("runtime action was denied, so verification remained non-passing")
+            else:
+                notes.append("execution posture was allowed in principle, but this dry canary still executed nothing")
+        else:
+            notes.append("no runtime action was requested, so execution objects remained empty")
         if disagreement_open:
             notes.append("open disagreement remained visible across context, live state, router, and compression")
         if turn_input.verification_status.lower() in {"pending", "failed", "unknown"}:
@@ -226,6 +257,9 @@ class FamilyTurnPipeline:
             mirror_summary=mirror_summary,
             effort_route=effort_route,
             router_decision=router_decision,
+            execution_request=execution_request,
+            execution_decision=execution_decision,
+            approval_request=approval_request,
             verification_record=verification_record,
             delta_log_event=delta_log_event,
             compression_summary=compression_summary,
@@ -325,12 +359,24 @@ class FamilyTurnPipeline:
         return None
 
     @staticmethod
-    def _verification_placeholder(turn_input: FamilyTurnInput) -> dict[str, Any]:
-        notes = ["dry pipeline canary: no real action executed, so verification is a compact placeholder"]
+    def _verification_placeholder(
+        turn_input: FamilyTurnInput,
+        *,
+        execution_decision: dict[str, Any],
+    ) -> dict[str, Any]:
+        notes = ["dry pipeline canary: no real action executed, so verification is conservative"]
         if turn_input.verification_status:
             notes.append(f"incoming verification posture: {turn_input.verification_status}")
         if turn_input.last_verified_result:
             notes.append("last verified result is carried as compact context, not fresh verification")
+        if execution_decision:
+            notes.append(f"execution gate decision: {execution_decision['decision']}")
+            if execution_decision["decision"] == "require_approval":
+                notes.append("approval is required before any runtime action can occur")
+            elif execution_decision["decision"] == "deny":
+                notes.append("runtime action is denied, so no execution outcome exists")
+            elif execution_decision["decision"] == "allow":
+                notes.append("runtime posture is allowed, but the dry canary still did not execute the action")
         return {
             "intended_action": turn_input.current_task or turn_input.current_message[:80],
             "executed_action": "",
@@ -340,6 +386,69 @@ class FamilyTurnPipeline:
             "evidence": [],
             "notes": notes,
         }
+
+    @staticmethod
+    def _build_execution_request(turn_input: FamilyTurnInput) -> ExecutionRequest:
+        haystack = f"{turn_input.current_message} {turn_input.current_task} {turn_input.execution_intent}".lower()
+
+        if any(token in haystack for token in ("inspect", "read", "list", "metadata")):
+            return ExecutionRequest(
+                action_type="inspect",
+                target_type="repo_metadata",
+                target_path_or_ref=turn_input.active_project or turn_input.current_task,
+                requested_zone="inspection",
+                writes_state=False,
+                executes_code=False,
+                network_required=False,
+                package_install_required=False,
+                secret_access_required=False,
+                source_trust_stage="reviewed",
+                reason=turn_input.execution_intent or turn_input.current_task or turn_input.current_message,
+            )
+
+        if any(token in haystack for token in ("install", "package", "dependency", "pip", "pytest")):
+            return ExecutionRequest(
+                action_type="install",
+                target_type="package",
+                target_path_or_ref=turn_input.execution_intent or turn_input.current_task or "requested-package",
+                requested_zone="host",
+                writes_state=False,
+                executes_code=False,
+                network_required=False,
+                package_install_required=True,
+                secret_access_required=False,
+                source_trust_stage="unknown",
+                reason=turn_input.execution_intent or turn_input.current_task or turn_input.current_message,
+            )
+
+        if any(token in haystack for token in ("write", "patch", "apply", "update", "commit", "modify")):
+            return ExecutionRequest(
+                action_type="write_file",
+                target_type="repo_file",
+                target_path_or_ref=turn_input.execution_intent or turn_input.current_task or turn_input.active_project,
+                requested_zone="host",
+                writes_state=True,
+                executes_code=False,
+                network_required=False,
+                package_install_required=False,
+                secret_access_required=False,
+                source_trust_stage="reviewed",
+                reason=turn_input.execution_intent or turn_input.current_task or turn_input.current_message,
+            )
+
+        return ExecutionRequest(
+            action_type="shell_execute",
+            target_type="command",
+            target_path_or_ref=turn_input.execution_intent or turn_input.current_task or turn_input.current_message,
+            requested_zone="host",
+            writes_state=False,
+            executes_code=True,
+            network_required=False,
+            package_install_required=False,
+            secret_access_required=False,
+            source_trust_stage="reviewed",
+            reason=turn_input.execution_intent or turn_input.current_task or turn_input.current_message,
+        )
 
     @staticmethod
     def _default_previous_live_state(
