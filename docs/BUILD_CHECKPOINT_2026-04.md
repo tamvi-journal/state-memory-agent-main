@@ -20,11 +20,14 @@ At this checkpoint:
 - the repo spine has been re-anchored to bounded authority, explicit law, inspectable state, preserved disagreement, and honest runtime behavior
 - the family-layer canary spine is no longer just a collection of isolated modules
 - the repo now has a dry integrated family turn pipeline with compact continuity carryover
-- PR-T has tightened the turn spine without widening scope into platform/runtime sprawl
+- PR-T normalized pipeline order and handoff handling
+- PR-X reduced the runtime truth gap by allowing explicit observed outcomes to move verification toward `passed` or `failed` when compact evidence is provided
+- PR-Y reduced the boundary-depth gap by hardening execution request classification, zone preference, and trust/scope reasoning without widening runtime hands
+- PR-Z reduced maintainability debt by extracting stage logic out of `turn_pipeline.py` while preserving dry-turn behavior
 
 This repo should currently be treated as:
 
-> **Internal alpha canary scaffold with an integrated family-layer dry pipeline**
+> **Internal alpha canary scaffold with an integrated family-layer dry pipeline, evidence-aware verification posture, hardened execution boundaries, and a more maintainable turn spine**
 
 ---
 
@@ -93,10 +96,13 @@ The following remain intentionally provisional:
 ### A. Dry pipeline remains dry
 - no real tool execution
 - no real file mutation
-- no real approvals
+- no real approvals runtime
 - no persistence layer
 - no sleep/runtime lifecycle
 - no archive-routing expansion
+
+Observed outcomes may now be supplied explicitly for verification purposes, but this does not mean the repo has real execution closure yet.
+The pipeline still remains dry and conservative by design.
 
 ### B. Verification remains conservative
 The dry pipeline may hold verification posture honestly, but it does not pretend that permission or routing equals successful execution.
@@ -117,31 +123,137 @@ That is acceptable for the current alpha canary phase, but it should not be forg
 
 ---
 
-## Real open gaps after PR-T
+## Real open gaps after PR-Z
 
 These are the **actual** open gaps at this checkpoint.
 
-### 1. Runtime truth gap
-The repo has honest verification posture, but still no real execution + observed-world verification loop in practice.
+## Gap 01 — Runtime Truth Gap
 
-Meaning:
-- the law is present
-- the object model is present
-- the dry posture is present
-- but real action-to-observation closure is not built yet
+**Severity:** High
 
-### 2. Boundary-depth gap
-Execution gate exists and is integrated into the dry pipeline, but trust classification and action-intent parsing are still compact and shallow.
+### Why it matters
+The repo no longer has only a decorative verification posture.
 
-### 3. Continuity-depth gap
+It now supports:
+- explicit observed outcomes
+- compact evidence authority
+- evidence-backed `passed` / `failed`
+- conservative `unknown` when evidence is absent or weak
+
+This is real progress.
+
+But the runtime still does not close the full loop between:
+- intended action
+- executed action
+- observed-world result
+
+The system can now consume explicit outcome evidence, but it still does not produce real execution-to-observation closure on its own.
+
+### What is already true
+- fake pass is resisted
+- permission does not equal completion
+- explicit observed evidence can move verification toward `passed` or `failed`
+- weak or absent evidence keeps verification conservative :contentReference[oaicite:3]{index=3}
+
+### What is still missing
+- real execution-to-observation closure
+- authoritative observed result ingestion from actual runtime action
+- a non-dry path from action to verified world change
+
+### What must happen before this gap is closed
+- a bounded real execution path must exist
+- observed result must be captured from actual action outcome
+- verification must be updated from real evidence produced after real runtime action
+
+### Not next
+Do not solve this by:
+- inventing success from tool text
+- widening the pipeline into uncontrolled execution
+- relaxing verification to make demos feel smoother
+
+## Gap 02 — Boundary Depth Gap
+
+**Severity:** Medium
+
+### Why it matters
+The execution gate is no longer operating from shallow action strings alone.
+
+The repo now has:
+- richer request classification
+- explicit operation kind
+- scope/trust/mutation depth fields
+- clearer zone preference
+- stronger sandbox-vs-host reasoning
+
+This reduces the boundary-depth gap materially.
+
+But the boundary model is still compact and heuristic.
+
+### What is already true
+- execution gate exists and is integrated
+- routing remains separate from permission
+- request classification is more explicit and inspectable
+- metadata inspection, sandbox parsing, repo mutation, shell intent, package install, secrets, and risky network access are now distinguished more clearly
+- package install remains explicitly denied in this canary :contentReference[oaicite:4]{index=4}
+
+### What is still missing
+- deeper semantic action-intent parsing
+- richer trust classification
+- more robust target and destination typing
+- less heuristic dependence in boundary reasoning
+
+### What must happen before this gap is closed
+- boundary decisions must become more semantically reliable without becoming opaque
+- trust/depth classification must remain explicit while becoming less brittle
+- sandbox / inspection / host distinctions must stay sharp under broader inputs
+
+### Not next
+Do not solve this by:
+- silently allowing more actions
+- hiding trust decisions behind vague confidence language
+- collapsing sandbox/inspection/host distinctions
+
+### Gap 03 — Continuity-depth gap
 Turn handoff now exists and is normalized better, but carryover semantics are still deliberately small.
 This is a strength for now, but it also means continuity depth is limited by design.
 
-### 4. Maintainability gap
-`turn_pipeline.py` is better than before, but the integrated dry spine is still beginning to accumulate coordination complexity.
-This does not yet require a major refactor, but it should be watched closely.
+## Gap 04 — Maintainability Gap
 
-### 5. Canonical docs gap
+**Severity:** Low
+
+### Why it matters
+The repo now has a real dry-turn spine and a growing family-layer coordination surface.
+
+Before PR-Z, too much of that coordination density was accumulating directly inside `turn_pipeline.py`.
+
+PR-Z reduced that debt by extracting stage construction logic into a helper stage module while preserving pipeline behavior.
+
+So this gap is no longer acute, but it is still real.
+
+### What is already true
+- the family layers compose into one dry-turn pipeline
+- stage order has been normalized
+- handoff handling is more explicit
+- `turn_pipeline.py` is now a more compact readable spine
+- stage logic has been extracted for better maintainability without changing dry-turn behavior 
+
+### What is still missing
+- long-term discipline around stage extraction boundaries
+- continued control over coordination density in helper modules
+- clearer limits on how much logic should accumulate in stage helpers before another cleanup pass is needed
+
+### What must happen before this gap is closed
+- maintainability must remain stable across later changes
+- the stage helper module must not become the new maze
+- future additions must prefer explicit local cleanup over silent density growth
+
+### Not next
+Do not solve this by:
+- premature big-architecture rewrite
+- abstraction for its own sake
+- scattering stage logic across too many tiny files
+
+### Gap 05 — Canonical docs gap
 The repo spine is much safer now, but drift can return if:
 - README falls behind implementation again
 - lineage/history docs are confused with active contract
@@ -180,17 +292,14 @@ When unsure, prefer:
 
 After this checkpoint, the correct next move is:
 
-> **gap review and targeted cleanup, not uncontrolled feature growth**
+> **targeted reduction of the remaining high/medium gaps, not uncontrolled layer growth**
 
-If another locking document is needed, it should be:
+The priority order is now:
 
-- `docs/GAP_LEDGER.md`
-
-and it should only list:
-- real unresolved gaps
-- current severity
-- why each gap matters
-- what should happen before the gap is considered closed
+1. reduce the Runtime Truth Gap further, but without widening into uncontrolled execution
+2. continue boundary hardening only when it stays explicit and inspectable
+3. preserve maintainability gains from PR-Z
+4. avoid reopening repo/docs drift
 
 ---
 

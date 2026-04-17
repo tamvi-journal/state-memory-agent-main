@@ -60,15 +60,16 @@ But it still does not close the loop between:
 That means the law is present, the posture is present, but runtime truth is still mostly modeled rather than lived.
 
 ### What is already true
-- verification posture exists
 - fake pass is explicitly resisted
 - permission does not equal completion
-- the dry pipeline keeps verification honest when no real action occurred :contentReference[oaicite:2]{index=2}
+- explicit observed outcomes can now move verification toward `passed` or `failed`
+- weak or absent evidence keeps verification conservative
+- the dry pipeline no longer depends on a purely decorative verification placeholder when explicit evidence is provided :contentReference[oaicite:6]{index=6}
 
 ### What is still missing
 - real execution-to-observation closure
-- authoritative observed outcome ingestion
-- a non-fake transition from unknown to passed/failed based on real evidence
+- authoritative observed result ingestion from actual runtime action
+- a non-dry path from action to verified world change
 
 ### What must happen before this gap is closed
 - a bounded execution path must exist
@@ -85,38 +86,46 @@ Do not solve this by:
 
 ## Gap 02 — Boundary Depth Gap
 
-**Severity:** High
+**Severity:** Medium
 
 ### Why it matters
-The execution gate is real and integrated, but the trust model beneath it is still shallow.
+The repo already distinguishes routing from permission and has an execution gate integrated into the dry pipeline.
 
-Right now, runtime permission logic is compact and inspectable, which is good.
-But it is not yet deep enough for serious runtime trust decisions.
+After the recent hardening pass, the gate also reasons from explicit boundary-depth fields such as:
+- requested operation
+- target scope
+- target trust
+- mutation depth
+- zone preference
+
+This materially reduces the gap.
+
+But boundary reasoning is still compact and heuristic rather than deeply semantic.
 
 ### What is already true
-- execution gate exists
-- runtime permission is distinct from routing
-- approval posture is explicit
-- package install is denied in the current canary scope
-- gate denial does not erase router posture or disagreement visibility :contentReference[oaicite:3]{index=3}
+- execution request classification is richer and more explicit
+- zone preference is clearer
+- sandbox is preferred more honestly where appropriate
+- repo mutation remains approval-gated
+- package installation remains denied
+- risky/untrusted action posture does not auto-allow :contentReference[oaicite:7]{index=7}
 
 ### What is still missing
-- richer action-intent parsing
-- deeper trust classification
-- stronger boundary typing around destinations, targets, and write scope
-- cleaner distinction between inspection, sandbox parsing, and host mutation intent
+- deeper semantic action-intent parsing
+- richer trust classification
+- less heuristic fragility in boundary reasoning
+- stronger destination and target typing
 
 ### What must happen before this gap is closed
-- execution request classification must become more semantically reliable
-- trust/depth decisions must be less keyword-shallow
-- boundary decisions must remain explicit while becoming less brittle
+- boundary decisions must become more semantically reliable without becoming opaque
+- trust/depth reasoning must remain inspectable while becoming less brittle
+- host/sandbox/inspection distinctions must remain explicit under broader cases
 
 ### Not next
 Do not solve this by:
-- silently allowing more actions
-- adding magical trust heuristics
-- collapsing sandbox/inspection/host distinctions
-
+- quietly allowing wider actions
+- hiding boundary choices behind vague smart behavior
+- weakening sandbox preference just to reduce friction
 ---
 
 ## Gap 03 — Continuity Depth Gap
@@ -163,35 +172,39 @@ Do not solve this by:
 
 ## Gap 04 — Maintainability Gap
 
-**Severity:** Medium
+**Severity:** Low
 
 ### Why it matters
-The repo now has a real dry-turn spine, which is progress.
-But integration success creates a new risk: coordination complexity begins to accumulate in the pipeline itself.
+The repo now has a real integrated dry-turn spine.
 
-If ignored, the repo will slowly become “works, but only if you remember the whole maze.”
+That made coordination complexity start to gather inside `turn_pipeline.py`.
+
+A dedicated extraction pass reduced that density by moving stage-building logic into a helper stage module while preserving behavior.
+
+So this gap is smaller than before, but it still exists as a discipline risk.
 
 ### What is already true
-- the family layers now compose into one dry-turn pipeline
-- PR-T improved order and maintainability without broadening scope
-- one small adapter was introduced to reduce loose-boundary drift rather than widening architecture irresponsibly :contentReference[oaicite:5]{index=5}
+- the family dry-turn spine is integrated
+- pipeline order has been normalized
+- handoff handling is more explicit
+- stage logic has been extracted out of `turn_pipeline.py`
+- behavior was intentionally preserved during that extraction pass 
 
 ### What is still missing
-- cleaner stage extraction boundaries
-- more disciplined internal adapters
-- smaller coordination surfaces inside the turn spine
-- clearer long-term separation between pipeline composition and stage logic
+- long-term control over stage-helper growth
+- stronger discipline around when to extract vs when to stop
+- continued readability as later changes accumulate
 
 ### What must happen before this gap is closed
-- pipeline complexity must be watched and trimmed before it becomes structural debt
-- stage composition should become easier to reason about without broad rewrite
-- helper/adapter growth must remain deliberate, not ad hoc
+- later changes must not recreate dense coordination blobs
+- extracted helpers must stay explicit and stage-oriented
+- maintainability must remain stable across future additions
 
 ### Not next
 Do not solve this by:
-- premature big-architecture rewrite
-- creating framework layers for their own sake
-- splitting everything into abstractions that hide rather than clarify
+- big-framework rewrite
+- abstraction for abstraction’s sake
+- exploding stage logic into too many tiny files
 
 ---
 
@@ -305,22 +318,25 @@ When choosing what to do next, use this order:
 
 1. truth before convenience
 2. boundary depth before feature expansion
-3. continuity honesty before continuity richness
-4. maintainability before cleverness
+3. maintainability before new layer growth
+4. continuity honesty before continuity richness
 5. canonical docs before repo drift
 
 ---
 
 ## What should happen before any major new layer is added
 
-Before adding major new runtime layers, at least one of the following must be materially reduced:
+Before adding major new runtime layers, at least one of the following must be materially reduced further:
 
 - Runtime Truth Gap
 - Boundary Depth Gap
+
+And the following must remain under control:
+
 - Maintainability Gap
+- Canonical Docs Gap
 
 If none of those moved, new layers are likely drift, not progress.
-
 ---
 
 ## Short closing line
