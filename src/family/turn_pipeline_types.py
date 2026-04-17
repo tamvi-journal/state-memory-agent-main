@@ -20,6 +20,7 @@ class FamilyTurnInput:
     current_environment_state: str = ""
     open_obligations: list[str] | None = None
     previous_live_state: dict[str, Any] | None = None
+    previous_handoff: dict[str, Any] | None = None
     explicit_mode_hint: str = ""
 
     def __post_init__(self) -> None:
@@ -45,12 +46,16 @@ class FamilyTurnInput:
             self.open_obligations = []
         if self.previous_live_state is None:
             self.previous_live_state = {}
+        if self.previous_handoff is None:
+            self.previous_handoff = {}
         if not isinstance(self.disagreement_events, list) or not all(isinstance(item, dict) for item in self.disagreement_events):
             raise TypeError("disagreement_events must be list[dict]")
         if not isinstance(self.open_obligations, list) or not all(isinstance(item, str) for item in self.open_obligations):
             raise TypeError("open_obligations must be list[str]")
         if not isinstance(self.previous_live_state, dict):
             raise TypeError("previous_live_state must be dict[str, Any] | None")
+        if not isinstance(self.previous_handoff, dict):
+            raise TypeError("previous_handoff must be dict[str, Any] | None")
         if not isinstance(self.action_required, bool):
             raise TypeError("action_required must be a bool")
         if not isinstance(self.archive_consulted, bool):
@@ -69,6 +74,9 @@ class FamilyTurnResult:
     mirror_summary: dict[str, Any]
     effort_route: dict[str, Any]
     router_decision: dict[str, Any]
+    execution_request: dict[str, Any]
+    execution_decision: dict[str, Any]
+    approval_request: dict[str, Any]
     verification_record: dict[str, Any]
     delta_log_event: dict[str, Any]
     compression_summary: dict[str, Any]
@@ -84,6 +92,9 @@ class FamilyTurnResult:
             "mirror_summary",
             "effort_route",
             "router_decision",
+            "execution_request",
+            "execution_decision",
+            "approval_request",
             "verification_record",
             "delta_log_event",
             "compression_summary",
