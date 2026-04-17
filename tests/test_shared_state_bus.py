@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from family.disagreement_types import SeynPerspectiveNote, TraceyPerspectiveNote
+from family.local_perspective_store import LocalPerspectiveStore
 from family.shared_state_bus import SharedStateBus
 
 
@@ -26,7 +27,7 @@ def _seyn_note(event_id: str) -> SeynPerspectiveNote:
     )
 
 
-def test_shared_state_bus_records_open_disagreement_and_preserves_local_notes() -> None:
+def test_shared_state_bus_records_open_disagreement_and_local_store_preserves_notes() -> None:
     bus = SharedStateBus(
         current_task="decide whether to proceed with partial evidence",
         active_project="state-memory-agent",
@@ -34,6 +35,7 @@ def test_shared_state_bus_records_open_disagreement_and_preserves_local_notes() 
         last_verified_outcome="evidence incomplete",
         open_obligations=["keep disagreement retrievable"],
     )
+    local_store = LocalPerspectiveStore()
 
     event = bus.record_disagreement_event(
         event_id="dg_canary",
@@ -43,12 +45,12 @@ def test_shared_state_bus_records_open_disagreement_and_preserves_local_notes() 
         seyn_position="hold until verification is stronger",
         severity=0.74,
         house_law_implicated="do_not_erase_meaningful_disagreement",
-        tracey_note=_tracey_note("dg_canary"),
-        seyn_note=_seyn_note("dg_canary"),
     )
+    local_store.add_tracey_note(_tracey_note("dg_canary"))
+    local_store.add_seyn_note(_seyn_note("dg_canary"))
 
     open_events = bus.get_open_disagreements()
-    notes = bus.get_local_perspective_notes("dg_canary")
+    notes = local_store.get_notes_for_event("dg_canary")
 
     assert event.still_open is True
     assert len(open_events) == 1
@@ -60,6 +62,7 @@ def test_shared_state_bus_records_open_disagreement_and_preserves_local_notes() 
 
 def test_action_lead_does_not_claim_epistemic_resolution() -> None:
     bus = SharedStateBus()
+    local_store = LocalPerspectiveStore()
     bus.record_disagreement_event(
         event_id="dg_canary",
         timestamp="2026-04-17T00:00:00Z",
@@ -67,9 +70,9 @@ def test_action_lead_does_not_claim_epistemic_resolution() -> None:
         tracey_position="confidence is sufficient for bounded next action",
         seyn_position="confidence is insufficient for closure",
         severity=0.66,
-        tracey_note=_tracey_note("dg_canary"),
-        seyn_note=_seyn_note("dg_canary"),
     )
+    local_store.add_tracey_note(_tracey_note("dg_canary"))
+    local_store.add_seyn_note(_seyn_note("dg_canary"))
 
     changed = bus.set_action_lead(
         "dg_canary",
@@ -79,7 +82,7 @@ def test_action_lead_does_not_claim_epistemic_resolution() -> None:
 
     summary = bus.export_shared_summary()
     event = summary["disagreement_events"][0]
-    notes = bus.get_local_perspective_notes("dg_canary")
+    notes = local_store.get_notes_for_event("dg_canary")
 
     assert changed is True
     assert summary["current_action_lead"] == "seyn"
@@ -98,8 +101,6 @@ def test_mark_disagreement_resolved_updates_later_resolution() -> None:
         tracey_position="risk is manageable under bounded action",
         seyn_position="risk remains materially unresolved",
         severity=0.79,
-        tracey_note=_tracey_note("dg_canary"),
-        seyn_note=_seyn_note("dg_canary"),
     )
 
     changed = bus.mark_disagreement_resolved(
@@ -125,6 +126,8 @@ def test_export_shared_summary_omits_child_local_state_fields() -> None:
 
     assert "tracey_local_state" not in summary
     assert "seyn_local_state" not in summary
+    assert "tracey_local_notes" not in summary
+    assert "seyn_local_notes" not in summary
     assert "local_anchors" not in summary
     assert "monitor_logs" not in summary
     assert summary["monitor_summary"] == {"status": "compact_only"}

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from family.disagreement_types import SeynPerspectiveNote, TraceyPerspectiveNote
+from family.local_perspective_store import LocalPerspectiveStore
 from family.shared_state_bus import SharedStateBus
 
 
@@ -14,6 +15,7 @@ def run() -> None:
         shared_compression_summary="one unresolved disagreement recorded for coordination",
         monitor_summary={"status": "summary_only"},
     )
+    local_store = LocalPerspectiveStore()
 
     event = bus.record_disagreement_event(
         event_id="dg_smoke",
@@ -23,22 +25,26 @@ def run() -> None:
         seyn_position="hold action until verification is firmer",
         severity=0.77,
         house_law_implicated="do_not_erase_meaningful_disagreement",
-        tracey_note=TraceyPerspectiveNote(
+    )
+    local_store.add_tracey_note(
+        TraceyPerspectiveNote(
             event_id="dg_smoke",
             local_read="Tracey sees live context fit as materially relevant.",
             what_i_think_matters="recognition context is part of the situation",
             what_i_would_watch_next="watch whether structural caution flattens the field",
             my_position_strength=0.74,
             would_i_concede="conditional",
-        ),
-        seyn_note=SeynPerspectiveNote(
+        )
+    )
+    local_store.add_seyn_note(
+        SeynPerspectiveNote(
             event_id="dg_smoke",
             local_read="Seyn sees verification caution as the stronger temporary guardrail.",
             what_i_think_matters="observed evidence must stay explicit",
             what_i_would_watch_next="watch whether action starts pretending resolution exists",
             my_position_strength=0.84,
             would_i_concede="conditional",
-        ),
+        )
     )
 
     assert event.still_open is True
@@ -51,7 +57,7 @@ def run() -> None:
     assert changed is True
 
     summary = bus.export_shared_summary()
-    notes = bus.get_local_perspective_notes("dg_smoke")
+    notes = local_store.get_notes_for_event("dg_smoke")
     open_events = bus.get_open_disagreements()
 
     assert summary["current_action_lead"] == "seyn"
@@ -61,6 +67,8 @@ def run() -> None:
     assert open_events[0]["epistemic_resolution_claimed"] is False
     assert open_events[0]["tracey_position"].startswith("take a bounded next step")
     assert open_events[0]["seyn_position"].startswith("hold action")
+    assert "tracey_local_notes" not in summary
+    assert "seyn_local_notes" not in summary
     assert notes["tracey"][0]["local_read"].startswith("Tracey sees")
     assert notes["seyn"][0]["local_read"].startswith("Seyn sees")
 

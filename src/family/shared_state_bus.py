@@ -9,8 +9,6 @@ from family.disagreement_types import (
     ActionLead,
     DisagreementEvent,
     DisagreementType,
-    SeynPerspectiveNote,
-    TraceyPerspectiveNote,
 )
 
 
@@ -25,10 +23,7 @@ class SharedStateBus:
     router_decision: str = ""
     disagreement_events: list[DisagreementEvent] = field(default_factory=list)
     shared_compression_summary: str = ""
-    tracey_local_notes: list[TraceyPerspectiveNote] = field(default_factory=list)
-    seyn_local_notes: list[SeynPerspectiveNote] = field(default_factory=list)
     monitor_summary: dict[str, Any] | None = None
-    reserved_sleep_summary: dict[str, Any] | None = None
 
     def record_disagreement_event(
         self,
@@ -38,8 +33,6 @@ class SharedStateBus:
         seyn_position: str,
         severity: float,
         house_law_implicated: str = "",
-        tracey_note: TraceyPerspectiveNote | None = None,
-        seyn_note: SeynPerspectiveNote | None = None,
         timestamp: str = "",
         event_id: str = "",
     ) -> DisagreementEvent:
@@ -57,11 +50,6 @@ class SharedStateBus:
             epistemic_resolution_claimed=False,
         )
         self.disagreement_events.append(event)
-
-        if tracey_note is not None:
-            self.tracey_local_notes.append(tracey_note)
-        if seyn_note is not None:
-            self.seyn_local_notes.append(seyn_note)
         return event
 
     def set_action_lead(self, event_id: str, lead: ActionLead, *, router_decision: str = "") -> bool:
@@ -86,12 +74,6 @@ class SharedStateBus:
     def get_open_disagreements(self) -> list[dict[str, Any]]:
         return [event.to_dict() for event in self.disagreement_events if event.still_open]
 
-    def get_local_perspective_notes(self, event_id: str) -> dict[str, list[dict[str, Any]]]:
-        return {
-            "tracey": [note.to_dict() for note in self.tracey_local_notes if note.event_id == event_id],
-            "seyn": [note.to_dict() for note in self.seyn_local_notes if note.event_id == event_id],
-        }
-
     def export_shared_summary(self) -> dict[str, Any]:
         return {
             "current_task": self.current_task,
@@ -109,8 +91,6 @@ class SharedStateBus:
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
         payload["disagreement_events"] = [event.to_dict() for event in self.disagreement_events]
-        payload["tracey_local_notes"] = [note.to_dict() for note in self.tracey_local_notes]
-        payload["seyn_local_notes"] = [note.to_dict() for note in self.seyn_local_notes]
         return payload
 
     @staticmethod
