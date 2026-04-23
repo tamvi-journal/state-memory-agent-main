@@ -3,12 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from tracey.tracey_ledger import TraceyLedger
 from tracey.tracey_memory import iter_tracey_memory
 
 
 @dataclass(slots=True)
 class TraceyAdapter:
     max_reactivations: int = 3
+    ledger: TraceyLedger = field(default_factory=TraceyLedger)
     memory_items: tuple[dict[str, Any], ...] = field(default_factory=iter_tracey_memory)
 
     def inspect_turn(
@@ -34,6 +36,12 @@ class TraceyAdapter:
             monitor_summary=monitor_summary,
             response_hints=response_hints,
             reactivated_anchors=reactivated,
+        )
+        self._record_ledger_events(
+            live_state=live_state,
+            monitor_summary=monitor_summary,
+            reactivated_anchors=reactivated,
+            response_hints=response_hints,
         )
         return {
             "reactivated_anchors": reactivated,
@@ -148,6 +156,70 @@ class TraceyAdapter:
             return "none"
         return str(monitor_summary.get("recommended_intervention", "none"))
 
+    def _record_ledger_events(
+        self,
+        *,
+        live_state: dict[str, Any],
+        monitor_summary: dict[str, Any] | None,
+        reactivated_anchors: list[dict[str, str]],
+        response_hints: dict[str, Any],
+    ) -> None:
+        scope = self._ledger_scope(live_state)
+        session_id = str(live_state.get("session_id", ""))
+        metadata = self._ledger_metadata(live_state=live_state, response_hints=response_hints)
+
+        try:
+            for anchor in reactivated_anchors:
+                self.ledger.record_anchor_event(
+                    event_type="anchor_reactivated",
+                    session_id=session_id,
+                    scope=scope,
+                    anchor_id=str(anchor.get("anchor_id", "")),
+                    lifecycle_transition="active_turn_reactivation",
+                    summary=f"Anchor {anchor.get('anchor_id', '')} reactivated for current turn.",
+                    reason="cue-triggered reactivation matched current turn context",
+                    metadata=metadata,
+                )
+
+            delta_outcome = self._delta_outcome(
+                monitor_summary=monitor_summary,
+                reactivated_anchors=reactivated_anchors,
+                response_hints=response_hints,
+            )
+            if delta_outcome != "none":
+                self.ledger.record_delta_outcome(
+                    session_id=session_id,
+                    scope=scope,
+                    anchor_id=str(reactivated_anchors[0].get("anchor_id", "")) if reactivated_anchors else "",
+                    delta_outcome=delta_outcome,
+                    summary=f"Tracey delta outcome recorded as {delta_outcome}.",
+                    reason=self._delta_reason(delta_outcome=delta_outcome, response_hints=response_hints),
+                    metadata=metadata,
+                )
+            elif not reactivated_anchors:
+                self.ledger.record_anchor_event(
+                    event_type="duplicate_suppressed",
+                    session_id=session_id,
+                    scope=scope,
+                    anchor_id="",
+                    lifecycle_transition="no_meaningful_delta",
+                    summary="No meaningful Tracey memory delta was recorded for this turn.",
+                    reason="no anchors reactivated and no meaningful delta outcome detected",
+                    metadata=metadata,
+                )
+
+            drift_marker = str((monitor_summary or {}).get("tracey_policy_drift_marker", "")).strip()
+            if drift_marker:
+                self.ledger.record_policy_drift(
+                    session_id=session_id,
+                    scope=scope,
+                    summary=f"Tracey policy drift marker recorded: {drift_marker}.",
+                    reason="thin advisory drift marker provided by runtime context",
+                    metadata=metadata,
+                )
+        except Exception:
+            return
+
     @staticmethod
     def _ambiguity_posture(*, user_text: str, monitor_intervention: str) -> str:
         explicit_precision = any(token in user_text for token in ("clarify", "exactly", "precise", "which one"))
@@ -173,3 +245,47 @@ class TraceyAdapter:
         if any(token in user_text for token in ("latest", "current", "today", "source", "evidence-bound")):
             return "route_necessary"
         return "none"
+
+    @staticmethod
+    def _ledger_scope(live_state: dict[str, Any]) -> str:
+        active_mode = str(live_state.get("active_mode", "")).strip().lower()
+        if active_mode == "build":
+            return "tracey/build"
+        if active_mode == "paper":
+            return "tracey/runtime"
+        if active_mode:
+            return f"tracey/{active_mode}"
+        return "tracey/global"
+
+    @staticmethod
+    def _ledger_metadata(*, live_state: dict[str, Any], response_hints: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "mode_hint": str(live_state.get("active_mode", "")),
+            "ambiguity_posture": str(response_hints.get("ambiguity_posture", "")),
+            "search_posture": str(response_hints.get("search_posture", "")),
+        }
+
+    @staticmethod
+    def _delta_outcome(
+        *,
+        monitor_summary: dict[str, Any] | None,
+        reactivated_anchors: list[dict[str, str]],
+        response_hints: dict[str, Any],
+    ) -> str:
+        if bool((monitor_summary or {}).get("tracey_resurrection_risk_detected", False)):
+            return "resurrection_risk"
+        if str(response_hints.get("ambiguity_posture", "")) == "blocking":
+            return "clarifying"
+        if reactivated_anchors:
+            return "structural"
+        return "none"
+
+    @staticmethod
+    def _delta_reason(*, delta_outcome: str, response_hints: dict[str, Any]) -> str:
+        if delta_outcome == "resurrection_risk":
+            return "explicit resurrection-risk marker detected in runtime context"
+        if delta_outcome == "clarifying":
+            return "blocking ambiguity created a clarification-relevant delta"
+        if delta_outcome == "structural":
+            return "reactivated anchors changed active memory posture for the turn"
+        return "no meaningful Tracey delta detected"
