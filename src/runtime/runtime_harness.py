@@ -16,6 +16,7 @@ from state.delta_log import DeltaRecord
 from state.live_state import LiveState
 from state.state_manager import StateManager
 from tools.market_data_tool import MarketDataTool
+from tracey.tracey_adapter import TraceyAdapter
 from verification.verification_loop import VerificationLoop
 from workers.candle_volume_structure_worker import CandleVolumeStructureWorker
 from workers.macro_sector_mapping_worker import MacroSectorMappingWorker
@@ -49,8 +50,20 @@ class RuntimeHarness:
         user_text: str,
         baton: dict[str, Any] | None = None,
         render_mode: str = "user",
+        rehydration_pack: dict[str, Any] | None = None,
+        host_metadata: dict[str, Any] | None = None,
+        kernel_options: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        state_manager = self._build_state_manager(baton=baton, user_text=user_text)
+        effective_render_mode = self._resolve_render_mode(
+            render_mode=render_mode,
+            kernel_options=kernel_options,
+        )
+        state_manager = self._build_state_manager(
+            baton=baton,
+            user_text=user_text,
+            rehydration_pack=rehydration_pack,
+            kernel_options=kernel_options,
+        )
         main_brain = MainBrain(state_manager=state_manager)
         router = RequestRouter(main_brain=main_brain)
         context_builder = ContextViewBuilder()
@@ -58,6 +71,7 @@ class RuntimeHarness:
         mirror = MirrorBridge()
         logger = EventLogger()
         trace_events = TraceEvents(logger=logger)
+        tracey = TraceyAdapter()
         market_data_tool = MarketDataTool(data_path=self.sample_data_path)
         market_data_worker = MarketDataWorker(market_data_tool=market_data_tool)
         technical_analysis_worker = TechnicalAnalysisWorker(market_data_tool=market_data_tool)
@@ -106,6 +120,11 @@ class RuntimeHarness:
             task_type=interpreted["task_type"],
             action_phase="pre_action",
         )["monitor_summary"]
+        tracey_turn = tracey.inspect_turn(
+            user_text=user_text,
+            live_state=state_manager.get_state().to_dict(),
+            monitor_summary=pre_monitor_summary,
+        )
 
         gate_decision = gate.decide(action_name=interpreted["task_type"])
         verification_record = None
@@ -158,8 +177,9 @@ class RuntimeHarness:
         else:
             final_response = router.route(
                 user_text,
-                render_mode=render_mode,
+                render_mode=effective_render_mode,
                 monitor_summary=pre_monitor_summary,
+                tracey_turn=tracey_turn,
             )
             verification_status = "pending"
             observed_outcome = ""
@@ -182,6 +202,9 @@ class RuntimeHarness:
                 "worker_payload": worker_payload,
                 "verification_record": None if verification_record is None else verification_record.to_dict(),
                 "monitor_summary": pre_monitor_summary,
+                "tracey_turn": tracey_turn,
+                "host_metadata": dict(host_metadata or {}),
+                "kernel_options": dict(kernel_options or {}),
                 "handoff_baton": baton_obj.to_dict(),
                 "observed_outcome": observed_outcome,
                 "events": logger.all_events(),
@@ -214,8 +237,9 @@ class RuntimeHarness:
                 user_text,
                 worker_payload=worker_payload,
                 verification_record=verification_record,
-                render_mode=render_mode,
+                render_mode=effective_render_mode,
                 monitor_summary=monitor_summary,
+                tracey_turn=tracey_turn,
             )
             verification_status = verification_record.verification_status
             observed_outcome = verification_record.observed_outcome
@@ -240,6 +264,9 @@ class RuntimeHarness:
             "worker_payload": worker_payload,
             "verification_record": None if verification_record is None else verification_record.to_dict(),
             "monitor_summary": pre_monitor_summary,
+            "tracey_turn": tracey_turn,
+            "host_metadata": dict(host_metadata or {}),
+            "kernel_options": dict(kernel_options or {}),
             "handoff_baton": baton_obj.to_dict(),
             "observed_outcome": observed_outcome,
             "events": logger.all_events(),
@@ -297,20 +324,44 @@ class RuntimeHarness:
         return "clarify the next bounded task if execution is required"
 
     @staticmethod
-    def _build_state_manager(*, baton: dict[str, Any] | None, user_text: str) -> StateManager:
-        active_mode = "build"
+    def _build_state_manager(
+        *,
+        baton: dict[str, Any] | None,
+        user_text: str,
+        rehydration_pack: dict[str, Any] | None = None,
+        kernel_options: dict[str, Any] | None = None,
+    ) -> StateManager:
+        normalized_rehydration = dict(rehydration_pack or {})
+        normalized_kernel_options = dict(kernel_options or {})
+        active_mode = RuntimeHarness._derive_active_mode(
+            baton=baton,
+            kernel_options=normalized_kernel_options,
+        )
         continuity_anchor = "thin-runtime-harness"
-        if baton:
-            active_mode = str(baton.get("active_mode", "build")) or "build"
+        if normalized_rehydration.get("primary_focus"):
+            continuity_anchor = str(normalized_rehydration["primary_focus"])
+        elif normalized_rehydration.get("session_title"):
+            continuity_anchor = str(normalized_rehydration["session_title"])
+        elif baton:
             continuity_anchor = str(baton.get("task_focus", continuity_anchor)) or continuity_anchor
+
+        active_project = "thin-runtime-harness"
+        if normalized_rehydration.get("session_title"):
+            active_project = str(normalized_rehydration["session_title"])
+        elif normalized_rehydration.get("session_id"):
+            active_project = str(normalized_rehydration["session_id"])
+
+        user_signal = user_text
+        if normalized_rehydration.get("current_status"):
+            user_signal = f"{normalized_rehydration['current_status']} | {user_text}"
 
         live_state = LiveState(
             active_mode=active_mode,
             current_axis="technical",
             coherence_level=0.92,
             tension_flags=[],
-            active_project="thin-runtime-harness",
-            user_signal=user_text,
+            active_project=active_project,
+            user_signal=user_signal,
             continuity_anchor=continuity_anchor,
             archive_needed=False,
         )
@@ -326,6 +377,35 @@ class RuntimeHarness:
             )
         )
         return manager
+
+    @staticmethod
+    def _derive_active_mode(
+        *,
+        baton: dict[str, Any] | None,
+        kernel_options: dict[str, Any],
+    ) -> str:
+        if baton:
+            baton_mode = str(baton.get("active_mode", "")).strip()
+            if baton_mode:
+                return baton_mode
+
+        option_mode = str(kernel_options.get("mode", "default")).strip().lower()
+        if option_mode in {"build", "builder"}:
+            return "build"
+        if option_mode in {"paper", "playful", "50_50", "audit"}:
+            return option_mode
+        return "build"
+
+    @staticmethod
+    def _resolve_render_mode(*, render_mode: str, kernel_options: dict[str, Any] | None) -> str:
+        requested = str(render_mode).strip().lower()
+        if requested in {"user", "builder"}:
+            return requested
+
+        option_mode = str((kernel_options or {}).get("mode", "default")).strip().lower()
+        if option_mode in {"build", "builder"}:
+            return "builder"
+        return "user"
 
     def _load_sample_macro_signal_payload(self) -> dict[str, Any] | None:
         path = Path(self.sample_macro_signal_path)

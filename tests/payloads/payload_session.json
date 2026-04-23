@@ -1,0 +1,35 @@
+{
+  "schema_version": "openclaw-state-agent/v0.1",
+  "request_id": "req_session_001",
+  "request_text": "Continue the MBB chart read from yesterday.",
+  "session": {
+    "session_id": "finance_mbb_daily",
+    "session_kind": "analysis",
+    "primary_focus": "MBB daily technical analysis",
+    "current_status": "paused",
+    "open_loops": [
+      "check whether mixed signal resolved"
+    ],
+    "last_verified_outcomes": [
+      "prior read classified as mixed"
+    ],
+    "active_skills": [
+      "technical_analysis"
+    ],
+    "next_hint": "resume from mixed alignment"
+  },
+  "host_metadata": {
+    "channel": "local_test",
+    "thread_id": "thread_001",
+    "route": "state_agent_finance",
+    "user_scope": "private",
+    "host_runtime": "openclaw"
+  },
+  "kernel_options": {
+    "mode": "default",
+    "allow_tool_paths": true,
+    "return_debug_trace": true,
+    "include_worker_result": true,
+    "include_snapshot_candidates": true
+  }
+}
