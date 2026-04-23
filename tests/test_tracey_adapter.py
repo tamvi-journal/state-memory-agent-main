@@ -63,4 +63,64 @@ def test_tracey_adapter_uses_response_hints_instead_of_response_rewrite() -> Non
     assert "response_hints" in tracey_turn
     assert "state_patch" in tracey_turn
     assert "adapt_response" not in dir(adapter)
-    assert tracey_turn["response_hints"]["keep_ambiguity_open"] is True
+    assert tracey_turn["response_hints"]["ambiguity_posture"] == "blocking"
+    assert tracey_turn["response_hints"]["keep_ambiguity_open"] is False
+
+
+def test_tracey_adapter_prefers_open_exploration_for_non_blocking_ambiguity() -> None:
+    adapter = TraceyAdapter()
+
+    tracey_turn = adapter.inspect_turn(
+        user_text="Maybe we could explore a few ways to frame this runtime refactor.",
+        live_state={"active_mode": "paper"},
+        monitor_summary={"recommended_intervention": "none"},
+    )
+
+    hints = tracey_turn["response_hints"]
+    assert hints["ambiguity_posture"] == "exploratory"
+    assert hints["keep_ambiguity_open"] is True
+    assert hints["search_posture"] == "none"
+
+
+def test_tracey_adapter_marks_blocking_ambiguity_for_precision_demand() -> None:
+    adapter = TraceyAdapter()
+
+    tracey_turn = adapter.inspect_turn(
+        user_text="Clarify exactly which worker should handle this.",
+        live_state={"active_mode": "paper"},
+        monitor_summary={"recommended_intervention": "ask_clarify"},
+    )
+
+    hints = tracey_turn["response_hints"]
+    assert hints["ambiguity_posture"] == "blocking"
+    assert hints["keep_ambiguity_open"] is False
+
+
+def test_tracey_adapter_keeps_build_mode_exact_without_search_by_anxiety() -> None:
+    adapter = TraceyAdapter()
+
+    tracey_turn = adapter.inspect_turn(
+        user_text="Refactor the runtime shape but keep the kernel boundary intact.",
+        live_state={"active_mode": "build"},
+        monitor_summary={"recommended_intervention": "none"},
+    )
+
+    hints = tracey_turn["response_hints"]
+    assert hints["build_mode_active"] is True
+    assert hints["verification_before_completion"] is True
+    assert hints["ambiguity_posture"] == "none"
+    assert hints["search_posture"] == "none"
+
+
+def test_tracey_adapter_explicit_verification_request_can_raise_search_posture() -> None:
+    adapter = TraceyAdapter()
+
+    tracey_turn = adapter.inspect_turn(
+        user_text="Please verify and confirm the latest result before we proceed.",
+        live_state={"active_mode": "paper"},
+        monitor_summary={"recommended_intervention": "none"},
+    )
+
+    hints = tracey_turn["response_hints"]
+    assert hints["search_posture"] == "on_demand"
+    assert hints["ambiguity_posture"] == "blocking"

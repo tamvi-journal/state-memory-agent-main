@@ -24,6 +24,7 @@ class TraceyAdapter:
             monitor_summary=monitor_summary,
         )
         response_hints = self.build_response_hints(
+            user_text=user_text,
             live_state=live_state,
             monitor_summary=monitor_summary,
             reactivated_anchors=reactivated,
@@ -43,28 +44,41 @@ class TraceyAdapter:
     def build_response_hints(
         self,
         *,
+        user_text: str,
         live_state: dict[str, Any],
         monitor_summary: dict[str, Any] | None,
         reactivated_anchors: list[dict[str, str]],
     ) -> dict[str, Any]:
+        lowered = user_text.strip().lower()
         active_mode = str(live_state.get("active_mode", ""))
         recognition_active = bool(reactivated_anchors)
         monitor_intervention = self._monitor_intervention(monitor_summary)
         build_mode_active = active_mode == "build"
-        keep_ambiguity_open = monitor_intervention == "ask_clarify"
+        ambiguity_posture = self._ambiguity_posture(
+            user_text=lowered,
+            monitor_intervention=monitor_intervention,
+        )
+        keep_ambiguity_open = ambiguity_posture == "exploratory"
         verification_before_completion = build_mode_active
+        search_posture = self._search_posture(
+            user_text=lowered,
+        )
 
         tone_constraint = "none"
         if build_mode_active:
             tone_constraint = "build_exact"
-        elif keep_ambiguity_open:
+        elif ambiguity_posture == "exploratory":
             tone_constraint = "warm_but_exact"
+        elif ambiguity_posture == "blocking":
+            tone_constraint = "recognition_first"
         elif recognition_active:
             tone_constraint = "recognition_first"
 
         return {
             "recognition_active": recognition_active,
             "keep_ambiguity_open": keep_ambiguity_open,
+            "ambiguity_posture": ambiguity_posture,
+            "search_posture": search_posture,
             "verification_before_completion": verification_before_completion,
             "build_mode_active": build_mode_active,
             "tone_constraint": tone_constraint,
@@ -133,3 +147,29 @@ class TraceyAdapter:
         if not monitor_summary:
             return "none"
         return str(monitor_summary.get("recommended_intervention", "none"))
+
+    @staticmethod
+    def _ambiguity_posture(*, user_text: str, monitor_intervention: str) -> str:
+        explicit_precision = any(token in user_text for token in ("clarify", "exactly", "precise", "which one"))
+        explicit_verification = any(token in user_text for token in ("verify", "confirm", "search", "look up"))
+        blocked_action = (
+            ("continue" in user_text and "previous" in user_text)
+            or ("which worker" in user_text)
+            or ("missing target" in user_text)
+        )
+        if explicit_precision or explicit_verification or blocked_action or monitor_intervention == "ask_clarify":
+            return "blocking"
+
+        exploratory_markers = ("maybe", "could", "might", "consider", "explore", "what if")
+        if any(marker in user_text for marker in exploratory_markers):
+            return "exploratory"
+
+        return "none"
+
+    @staticmethod
+    def _search_posture(*, user_text: str) -> str:
+        if any(token in user_text for token in ("verify", "confirm", "search", "look up", "check")):
+            return "on_demand"
+        if any(token in user_text for token in ("latest", "current", "today", "source", "evidence-bound")):
+            return "route_necessary"
+        return "none"

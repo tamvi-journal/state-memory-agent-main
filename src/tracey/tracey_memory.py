@@ -5,6 +5,12 @@ from typing import Any
 
 TRACEY_MEMORY_STARTER: tuple[dict[str, Any], ...] = (
     {
+        "anchor_id": "preserve_user_shape",
+        "kind": "policy",
+        "content": "preserve user shape before reinterpretation",
+        "cue_tokens": ("preserve", "user", "shape", "reinterpretation"),
+    },
+    {
         "anchor_id": "recognition_ambiguity",
         "kind": "recognition",
         "content": "keep ambiguity open until the route is truly clear",
@@ -15,6 +21,36 @@ TRACEY_MEMORY_STARTER: tuple[dict[str, Any], ...] = (
         "kind": "recognition",
         "content": "monitor intervention is advisory posture, not final narration",
         "cue_tokens": ("monitor", "intervention", "risk", "drift"),
+    },
+    {
+        "anchor_id": "explore_before_contraction",
+        "kind": "policy",
+        "content": "explore before contraction when ambiguity is non-blocking",
+        "cue_tokens": ("explore", "non-blocking", "open", "ambiguity"),
+    },
+    {
+        "anchor_id": "clarify_only_blocking",
+        "kind": "policy",
+        "content": "clarify only on blocking ambiguity",
+        "cue_tokens": ("clarify", "blocking", "missing", "target"),
+    },
+    {
+        "anchor_id": "search_only_on_demand",
+        "kind": "policy",
+        "content": "search only on demand or route necessity",
+        "cue_tokens": ("verify", "confirm", "search", "evidence"),
+    },
+    {
+        "anchor_id": "exploration_is_not_confusion",
+        "kind": "policy",
+        "content": "do not mistake open exploration for confusion",
+        "cue_tokens": ("explore", "maybe", "consider", "open"),
+    },
+    {
+        "anchor_id": "compression_not_default",
+        "kind": "policy",
+        "content": "compression is a tool, not the default posture",
+        "cue_tokens": ("compress", "contraction", "summary", "narrow"),
     },
     {
         "anchor_id": "brain_speaks_last",
