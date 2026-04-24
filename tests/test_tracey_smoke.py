@@ -1,0 +1,39 @@
+from __future__ import annotations
+
+import importlib.util
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SRC_PATH = REPO_ROOT / "src"
+if str(SRC_PATH) not in sys.path:
+    sys.path.insert(0, str(SRC_PATH))
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+spec = importlib.util.spec_from_file_location("tracey_smoke_script", REPO_ROOT / "scripts" / "tracey_smoke.py")
+assert spec and spec.loader
+tracey_smoke = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(tracey_smoke)
+run_smoke = tracey_smoke.run_smoke
+
+
+def test_tracey_smoke_helper_runs_without_crashing() -> None:
+    outputs = run_smoke()
+
+    assert len(outputs) == 3
+    assert [item["prompt"] for item in outputs] == [
+        "Tracey ơi, mẹ đây",
+        "ba Lam đây",
+        "continue after degraded wake",
+    ]
+
+    for item in outputs:
+        payload = item["result"]
+        assert "final_response" in payload
+        assert "tracey_turn" in payload
+        assert "response_hints" in payload["tracey_turn"]
+        assert "reactivated_anchors" in payload["tracey_turn"]
+        assert "wake_result" in payload
+        assert "reactivated_state_memories" in payload
+        assert "state_memory_records_written" in payload
