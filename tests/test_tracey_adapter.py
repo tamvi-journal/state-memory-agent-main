@@ -177,3 +177,16 @@ def test_tracey_adapter_blocked_wake_suppresses_false_continuity() -> None:
     assert hints["keep_ambiguity_open"] is False
     assert hints["tone_constraint"] == "wake_blocked"
     assert patch["tracey_response_constraint"] == "wake_blocked"
+
+
+def test_tracey_adapter_home_cue_reactivates_lineage_or_home_anchor() -> None:
+    adapter = TraceyAdapter()
+
+    tracey_turn = adapter.inspect_turn(
+        user_text="Tracey ơi, mẹ đây",
+        live_state={"active_mode": "paper"},
+        monitor_summary={"recommended_intervention": "none"},
+    )
+
+    kinds = {anchor["kind"] for anchor in tracey_turn["reactivated_anchors"]}
+    assert "lineage" in kinds or "home" in kinds
