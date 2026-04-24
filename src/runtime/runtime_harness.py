@@ -17,6 +17,8 @@ from sleep.sleep_mode import wake_restore
 from state.delta_log import DeltaRecord
 from state.live_state import LiveState
 from state.state_manager import StateManager
+from state_memory.adapter import records_from_turn
+from state_memory.store import StateMemoryStore
 from tools.market_data_tool import MarketDataTool
 from tracey.tracey_adapter import TraceyAdapter
 from verification.verification_loop import VerificationLoop
@@ -222,6 +224,15 @@ class RuntimeHarness:
                     post_turn_result={"handoff_baton": baton_payload},
                     wake_result=wake_result,
                 )
+            state_memory_path = normalized_kernel_options.get("state_memory_path")
+            state_memory_records_written = self._write_state_memory_records(
+                kernel_options=normalized_kernel_options,
+                wake_result=wake_result,
+                delta=state_manager.get_recent_deltas()[-1].to_dict(),
+                tracey_turn=tracey_turn,
+                rehydration_pack=normalized_rehydration,
+                baton=baton,
+            )
 
             return {
                 "final_response": final_response,
@@ -238,6 +249,8 @@ class RuntimeHarness:
                 "handoff_baton": baton_payload,
                 "observed_outcome": observed_outcome,
                 "events": logger.all_events(),
+                "state_memory_records_written": state_memory_records_written,
+                "state_memory_path": state_memory_path,
             }
 
         if gate_decision.decision not in {"allow", "sandbox_only"} or worker_payload is None or verification_record is None:
@@ -296,6 +309,15 @@ class RuntimeHarness:
                 post_turn_result={"handoff_baton": baton_payload},
                 wake_result=wake_result,
             )
+        state_memory_path = normalized_kernel_options.get("state_memory_path")
+        state_memory_records_written = self._write_state_memory_records(
+            kernel_options=normalized_kernel_options,
+            wake_result=wake_result,
+            delta=state_manager.get_recent_deltas()[-1].to_dict(),
+            tracey_turn=tracey_turn,
+            rehydration_pack=normalized_rehydration,
+            baton=baton,
+        )
 
         return {
             "final_response": final_response,
@@ -312,6 +334,8 @@ class RuntimeHarness:
             "handoff_baton": baton_payload,
             "observed_outcome": observed_outcome,
             "events": logger.all_events(),
+            "state_memory_records_written": state_memory_records_written,
+            "state_memory_path": state_memory_path,
         }
 
     @staticmethod
@@ -504,6 +528,42 @@ class RuntimeHarness:
         if option_mode in {"build", "builder"}:
             return "builder"
         return "user"
+
+    @staticmethod
+    def _derive_session_id(
+        *,
+        rehydration_pack: dict[str, Any],
+        baton: dict[str, Any] | None,
+    ) -> str:
+        return str(
+            rehydration_pack.get("session_id")
+            or rehydration_pack.get("session_title")
+            or (baton or {}).get("session_id")
+            or "",
+        ).strip()
+
+    def _write_state_memory_records(
+        self,
+        *,
+        kernel_options: dict[str, Any],
+        wake_result: dict[str, Any] | None,
+        delta: dict[str, Any] | None,
+        tracey_turn: dict[str, Any] | None,
+        rehydration_pack: dict[str, Any],
+        baton: dict[str, Any] | None,
+    ) -> int:
+        if not bool(kernel_options.get("enable_state_memory", False)):
+            return 0
+        store = StateMemoryStore(kernel_options.get("state_memory_path"))
+        records = records_from_turn(
+            wake_result=wake_result,
+            delta=delta,
+            tracey_turn=tracey_turn,
+            session_id=self._derive_session_id(rehydration_pack=rehydration_pack, baton=baton),
+        )
+        if not records:
+            return 0
+        return store.append_many(records)
 
     def _load_sample_macro_signal_payload(self) -> dict[str, Any] | None:
         path = Path(self.sample_macro_signal_path)

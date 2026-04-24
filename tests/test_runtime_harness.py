@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from runtime.runtime_harness import RuntimeHarness
+from state_memory.store import StateMemoryStore
 
 
 def test_runtime_harness_runs_the_single_worker_spine() -> None:
@@ -196,3 +197,124 @@ def test_runtime_harness_applies_wake_resume_constraints(tmp_path: Path) -> None
     assert result["tracey_turn"]["response_hints"]["keep_ambiguity_open"] is True
     assert "Wake status: degraded resume." in result["final_response"]
     assert result["handoff_baton"]["monitor_summary"]["wake_resume_class"] == "degraded_resume"
+
+
+def test_runtime_harness_does_not_write_state_memory_by_default(tmp_path: Path) -> None:
+    memory_path = tmp_path / "state_memory.jsonl"
+
+    result = RuntimeHarness().run(
+        user_text="hello there",
+        kernel_options={"state_memory_path": str(memory_path)},
+    )
+
+    assert result["state_memory_records_written"] == 0
+    assert result["state_memory_path"] == str(memory_path)
+    assert memory_path.exists() is False
+
+
+def test_runtime_harness_writes_state_memory_when_enabled(tmp_path: Path) -> None:
+    memory_path = tmp_path / "state_memory.jsonl"
+
+    result = RuntimeHarness().run(
+        user_text="Load MBB daily data",
+        kernel_options={
+            "enable_state_memory": True,
+            "state_memory_path": str(memory_path),
+        },
+    )
+
+    assert result["state_memory_records_written"] >= 1
+    assert result["state_memory_path"] == str(memory_path)
+    assert memory_path.exists() is True
+    assert StateMemoryStore(memory_path).read_all()
+
+
+def test_runtime_harness_records_wake_degraded_event_when_enabled(tmp_path: Path) -> None:
+    snapshot_dir = tmp_path / "sleep_snapshots"
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+    snapshot_payload = {
+        "schema_version": "state-agent-sleep-snapshot/v0.1",
+        "snapshot_id": "snap_test_001",
+        "created_at": "2026-04-23T19:10:00Z",
+        "runtime_id": "tracey_runtime_local",
+        "session_id": "builder_state_agent_runtime_test",
+        "sleep_reason": "manual",
+        "sleep_level": "normal",
+        "identity_state": {
+            "agent_name": "Tracey",
+            "active_axis": "build",
+            "mode": "build",
+            "identity_constraints": ["brain_speaks_last"],
+            "continuity_confidence": "medium",
+        },
+        "thread_state": {
+            "primary_focus": "state-agent-runtime-test sleep/wake work",
+            "current_status": "paused",
+            "open_loops": ["revalidate tool handles after wake"],
+            "recent_decisions": [],
+            "last_verified_outcomes": [],
+            "relevant_entities": ["Tracey"],
+            "next_hint": "continue sleep/wake integration",
+        },
+        "memory_state": {
+            "canonical_anchor_ids": ["tracey.invariant.brain_speaks_last"],
+            "provisional_anchor_ids": [],
+            "invalidated_anchor_ids": [],
+            "reactivation_priority": [],
+            "stale_anchor_risks": [],
+        },
+        "runtime_state": {
+            "verification_status": "passed",
+            "monitor_risk_summary": "",
+            "active_skills": ["workflow_builder"],
+            "pending_repairs": [],
+            "context_fragmentation": "low",
+        },
+        "handle_state": {
+            "tool_handles": [],
+            "worker_handles": [],
+            "dead_on_wake": [],
+            "must_revalidate": ["tool_handles"],
+        },
+        "boundary_state": {
+            "host_runtime": "OpenClaw",
+            "route_class": "direct_reasoning",
+            "persistence_scope": "mixed",
+            "truth_boundary_note": "sleep snapshot is local resume evidence only",
+        },
+        "resume_constraints": {
+            "must_run_wake_sanity": True,
+            "allow_direct_resume": False,
+            "requires_revalidation": ["tool_handles"],
+            "forbidden_claims_until_revalidated": [],
+        },
+    }
+    snapshot_path = snapshot_dir / "builder_state_agent_runtime_test__latest.json"
+    snapshot_path.write_text(json.dumps(snapshot_payload, indent=2), encoding="utf-8")
+    memory_path = tmp_path / "state_memory.jsonl"
+
+    result = RuntimeHarness().run(
+        user_text="continue the sleep wake work",
+        render_mode="builder",
+        rehydration_pack={
+            "session_id": "builder_state_agent_runtime_test",
+            "primary_focus": "state-agent-runtime-test sleep/wake work",
+            "current_status": "paused",
+        },
+        host_metadata={
+            "host_runtime": "OpenClaw",
+            "route": "direct_reasoning",
+        },
+        kernel_options={
+            "mode": "build",
+            "resume_from_sleep": True,
+            "sleep_snapshot_dir": str(snapshot_dir),
+            "enable_state_memory": True,
+            "state_memory_path": str(memory_path),
+        },
+    )
+
+    assert result["state_memory_records_written"] >= 1
+    records = StateMemoryStore(memory_path).read_all()
+    event_types = {record["event_type"] for record in records}
+    assert "wake_degraded" in event_types
