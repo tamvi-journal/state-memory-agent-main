@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 
 @dataclass(slots=True)
@@ -17,7 +17,7 @@ class EventLogger:
 
     def log(self, category: str, payload: dict[str, Any]) -> dict[str, Any]:
         event = {
-            "timestamp_utc": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
+            "timestamp_utc": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
             "category": category,
             "payload": payload,
         }
