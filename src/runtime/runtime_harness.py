@@ -16,6 +16,8 @@ from sleep.integration import apply_wake_result_to_runtime_state, build_tracey_w
 from sleep.sleep_mode import wake_restore
 from state.delta_log import DeltaRecord
 from state.live_state import LiveState
+from state_memory.reactivation import reactivate_state_memories
+from state_memory.store import StateMemoryStore
 from state.state_manager import StateManager
 from tools.market_data_tool import MarketDataTool
 from tracey.tracey_adapter import TraceyAdapter
@@ -107,6 +109,12 @@ class RuntimeHarness:
             runtime_state=live_state_dict,
             wake_result=wake_result,
         ) if wake_result else live_state_dict
+        reactivated_state_memories = self._reactivate_state_memories(
+            user_text=user_text,
+            baton=baton,
+            rehydration_pack=normalized_rehydration,
+            kernel_options=normalized_kernel_options,
+        )
 
         interpreted = main_brain.interpret_request(user_text)
         task_focus = self._task_focus(interpreted=interpreted, user_text=user_text)
@@ -233,6 +241,7 @@ class RuntimeHarness:
                 "tracey_turn": tracey_turn,
                 "wake_result": wake_result,
                 "sleep_runtime_state": sleep_runtime_state,
+                "reactivated_state_memories": reactivated_state_memories,
                 "host_metadata": normalized_host_metadata,
                 "kernel_options": normalized_kernel_options,
                 "handoff_baton": baton_payload,
@@ -307,6 +316,7 @@ class RuntimeHarness:
             "tracey_turn": tracey_turn,
             "wake_result": wake_result,
             "sleep_runtime_state": sleep_runtime_state,
+            "reactivated_state_memories": reactivated_state_memories,
             "host_metadata": normalized_host_metadata,
             "kernel_options": normalized_kernel_options,
             "handoff_baton": baton_payload,
@@ -352,6 +362,46 @@ class RuntimeHarness:
             },
         )
         return restored.get("wake_result")
+
+    @staticmethod
+    def _reactivate_state_memories(
+        *,
+        user_text: str,
+        baton: dict[str, Any] | None,
+        rehydration_pack: dict[str, Any],
+        kernel_options: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        if not bool(kernel_options.get("enable_state_memory", False)):
+            return []
+
+        session_id = RuntimeHarness._derive_session_id(
+            baton=baton,
+            rehydration_pack=rehydration_pack,
+        )
+        scope_prefix = str(kernel_options.get("state_memory_scope_prefix", "")).strip()
+        limit = int(kernel_options.get("state_memory_reactivation_limit", 5) or 5)
+        memory_path = kernel_options.get("state_memory_path")
+        store = StateMemoryStore(memory_path=memory_path)
+        recent_records = store.read_recent(limit=max(limit, 5) * 4)
+        return reactivate_state_memories(
+            records=recent_records,
+            cue_text=user_text,
+            session_id=session_id,
+            scope_prefix=scope_prefix,
+            limit=limit,
+        )
+
+    @staticmethod
+    def _derive_session_id(
+        *,
+        baton: dict[str, Any] | None,
+        rehydration_pack: dict[str, Any],
+    ) -> str:
+        return str(
+            rehydration_pack.get("session_id")
+            or rehydration_pack.get("session_title")
+            or (baton or {}).get("session_id", "")
+        ).strip()
 
     @staticmethod
     def _apply_wake_posture(*, final_response: str, wake_result: dict[str, Any] | None) -> str:

@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 
 from runtime.runtime_harness import RuntimeHarness
+from state_memory.contracts import StateMemoryRecord
+from state_memory.store import StateMemoryStore
 
 
 def test_runtime_harness_runs_the_single_worker_spine() -> None:
@@ -196,3 +198,118 @@ def test_runtime_harness_applies_wake_resume_constraints(tmp_path: Path) -> None
     assert result["tracey_turn"]["response_hints"]["keep_ambiguity_open"] is True
     assert "Wake status: degraded resume." in result["final_response"]
     assert result["handoff_baton"]["monitor_summary"]["wake_resume_class"] == "degraded_resume"
+
+
+def test_runtime_harness_returns_empty_reactivated_state_memories_when_disabled(tmp_path: Path) -> None:
+    memory_path = tmp_path / "state_memory.jsonl"
+    store = StateMemoryStore(memory_path)
+    store.append(
+        StateMemoryRecord(
+            event_type="wake_degraded",
+            scope="runtime/wake",
+            summary="hello handshake observed with wake reminder",
+            tags=["hello", "wake"],
+        )
+    )
+
+    result = RuntimeHarness().run(
+        user_text="wake handles",
+        render_mode="user",
+        kernel_options={
+            "enable_state_memory": False,
+            "state_memory_path": str(memory_path),
+        },
+    )
+
+    assert result["reactivated_state_memories"] == []
+
+
+def test_runtime_harness_reactivates_relevant_state_memory_by_cue(tmp_path: Path) -> None:
+    memory_path = tmp_path / "state_memory.jsonl"
+    store = StateMemoryStore(memory_path)
+    store.append(
+        StateMemoryRecord(
+            event_type="wake_degraded",
+            scope="runtime/wake",
+            summary="wake degraded because handles must be revalidated",
+            session_id="session_a",
+            tags=["wake", "handles"],
+        )
+    )
+    store.append(
+        StateMemoryRecord(
+            event_type="mode_shift",
+            scope="runtime/delta",
+            summary="mode shifted build to audit",
+            session_id="session_a",
+            tags=["mode"],
+        )
+    )
+
+    result = RuntimeHarness().run(
+        user_text="wake handles",
+        render_mode="user",
+        rehydration_pack={"session_id": "session_a"},
+        kernel_options={
+            "enable_state_memory": True,
+            "state_memory_path": str(memory_path),
+            "state_memory_reactivation_limit": 5,
+        },
+    )
+
+    assert len(result["reactivated_state_memories"]) == 1
+    assert result["reactivated_state_memories"][0]["event_type"] == "wake_degraded"
+
+
+def test_runtime_harness_does_not_reactivate_invalidated_records(tmp_path: Path) -> None:
+    memory_path = tmp_path / "state_memory.jsonl"
+    store = StateMemoryStore(memory_path)
+    store.append(
+        StateMemoryRecord(
+            event_type="wake_degraded",
+            scope="runtime/wake",
+            summary="wake degraded because handles must be revalidated",
+            lifecycle_status="invalidated",
+            tags=["wake", "handles"],
+        )
+    )
+
+    result = RuntimeHarness().run(
+        user_text="wake handles",
+        render_mode="user",
+        kernel_options={
+            "enable_state_memory": True,
+            "state_memory_path": str(memory_path),
+        },
+    )
+
+    assert result["reactivated_state_memories"] == []
+
+
+def test_reactivated_state_memory_is_advisory_only(tmp_path: Path) -> None:
+    memory_path = tmp_path / "state_memory.jsonl"
+    store = StateMemoryStore(memory_path)
+    store.append(
+        StateMemoryRecord(
+            event_type="wake_degraded",
+            scope="runtime/wake",
+            summary="hello handshake observed with wake reminder",
+            tags=["hello", "wake"],
+        )
+    )
+
+    baseline = RuntimeHarness().run(user_text="hello there", render_mode="user")
+    with_memory = RuntimeHarness().run(
+        user_text="hello there",
+        render_mode="user",
+        kernel_options={
+            "enable_state_memory": True,
+            "state_memory_path": str(memory_path),
+        },
+    )
+
+    assert with_memory["reactivated_state_memories"]
+    assert with_memory["final_response"] == baseline["final_response"]
+    assert with_memory["gate_decision"] == baseline["gate_decision"]
+    assert with_memory["verification_record"] == baseline["verification_record"]
+    assert with_memory["wake_result"] == baseline["wake_result"]
