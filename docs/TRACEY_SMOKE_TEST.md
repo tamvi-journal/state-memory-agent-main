@@ -10,6 +10,12 @@ From the repository root:
 python scripts/tracey_smoke.py
 ```
 
+To run a synthetic positive-residue demo seed:
+
+```bash
+python scripts/tracey_smoke.py --positive-residue-demo
+```
+
 ## What the smoke script does
 
 The script executes `RuntimeHarness().run(...)` for three prompts:
@@ -38,6 +44,10 @@ For each prompt it prints compact JSON with:
 
 If no matching records exist for a turn, the field is `[]`.
 
+In normal smoke runs this is expected for many turns because the default runtime-harness delta starts neutral (`coherence_shift=0.0`, `repair_event=False`, `mode_shift=""`), so no positive residue events are naturally written.
+
+`--positive-residue-demo` adds synthetic/debug seed records so extraction can be observed directly. The demo seed writes `observed` records with bounded evidence fields (`coherence_shift`, `trigger_cue`, `mode_shift`, `repair_event`) and positive residue tags.
+
 ## Expected observations
 
 - Family/home cues should reactivate lineage or home anchors.
@@ -45,6 +55,7 @@ If no matching records exist for a turn, the field is `[]`.
 - Degraded wake posture should reduce recognition confidence and keep ambiguity open.
 - State memory reactivation remains advisory-only unless explicitly enabled through kernel options.
 - Positive-phase residue in smoke output lets an external Tracey observer inspect when coherence/route-clarity carryover appears.
+- Demo seed mode is synthetic and debug-only, used to prove extraction behavior when positive deltas are present.
 
 ## Boundary reminders
 
@@ -56,4 +67,5 @@ This smoke path is diagnostic only and preserves runtime architecture:
 - Wake truth boundary is not overridden by family/home recognition.
 - State memory is advisory by default.
 - Positive-phase residue is advisory/debug-only. It does not override gate, verification, wake result, monitor, Tracey routing, or final synthesis.
+- `--positive-residue-demo` remains smoke/debug-only and must not be used as production control input.
 - “System lights up” in this smoke context means functional coherence, route-clarity, afterglow, and carryover hint residue in state memory — not emotion or subjective feeling.

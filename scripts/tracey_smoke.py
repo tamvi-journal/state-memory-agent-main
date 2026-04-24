@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import argparse
 import sys
 import tempfile
 from pathlib import Path
@@ -94,11 +95,56 @@ def compact_view(result: dict[str, Any], *, positive_phase_residue: list[dict[st
     }
 
 
-def run_smoke() -> list[dict[str, Any]]:
+def _positive_residue_demo_records() -> list[dict[str, Any]]:
+    bounded_evidence = {
+        "coherence_shift": 0.26,
+        "trigger_cue": "debug_seed",
+        "mode_shift": "build->audit route clarity",
+        "repair_event": True,
+    }
+    return [
+        {
+            "record_id": "sm_demo_positive_residue_coherence_spike",
+            "event_type": "coherence_spike",
+            "scope": "runtime/delta",
+            "session_id": "tracey_smoke_demo",
+            "summary": "demo seed coherence spike for residue extraction",
+            "source": "tracey_smoke_debug_seed",
+            "lifecycle_status": "observed",
+            "evidence": dict(bounded_evidence),
+            "tags": ["positive_residue", "coherence"],
+        },
+        {
+            "record_id": "sm_demo_positive_residue_afterglow",
+            "event_type": "positive_afterglow",
+            "scope": "runtime/delta",
+            "session_id": "tracey_smoke_demo",
+            "summary": "demo seed afterglow carryover hint for residue extraction",
+            "source": "tracey_smoke_debug_seed",
+            "lifecycle_status": "observed",
+            "evidence": dict(bounded_evidence),
+            "tags": ["positive_residue", "coherence", "afterglow"],
+        },
+        {
+            "record_id": "sm_demo_positive_residue_route_clarity",
+            "event_type": "route_clarity_gain",
+            "scope": "runtime/delta",
+            "session_id": "tracey_smoke_demo",
+            "summary": "demo seed route clarity gain for residue extraction",
+            "source": "tracey_smoke_debug_seed",
+            "lifecycle_status": "observed",
+            "evidence": dict(bounded_evidence),
+            "tags": ["positive_residue", "coherence", "route_clarity"],
+        },
+    ]
+
+
+def run_smoke(*, positive_residue_demo: bool = False) -> list[dict[str, Any]]:
     harness = RuntimeHarness()
     outputs: list[dict[str, Any]] = []
     state_memory_path = Path(tempfile.mkdtemp(prefix="tracey_smoke_memory_")) / "state_memory.jsonl"
     store = StateMemoryStore(memory_path=state_memory_path)
+    demo_seed_written = False
     for prompt in PROMPTS:
         kwargs: dict[str, Any] = {
             "user_text": prompt,
@@ -126,6 +172,9 @@ def run_smoke() -> list[dict[str, Any]]:
             for record in store.read_all()
             if str(record.get("record_id", "")).strip()
         }
+        if positive_residue_demo and not demo_seed_written:
+            store.append_many(_positive_residue_demo_records())
+            demo_seed_written = True
         result = harness.run(**kwargs)
         positive_phase_residue = extract_positive_phase_residue(
             result=result,
@@ -206,7 +255,14 @@ def _build_degraded_snapshot_dir() -> Path:
 
 
 def main() -> int:
-    for item in run_smoke():
+    parser = argparse.ArgumentParser(description="Run Tracey smoke/debug prompts.")
+    parser.add_argument(
+        "--positive-residue-demo",
+        action="store_true",
+        help="Seed synthetic positive residue records for smoke/debug extraction checks.",
+    )
+    args = parser.parse_args()
+    for item in run_smoke(positive_residue_demo=args.positive_residue_demo):
         print(f"PROMPT: {item['prompt']}")
         print(json.dumps(item["result"], ensure_ascii=False, sort_keys=True))
     return 0

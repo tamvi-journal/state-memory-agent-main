@@ -42,6 +42,28 @@ def test_tracey_smoke_helper_runs_without_crashing() -> None:
         assert isinstance(payload["positive_phase_residue"], list)
 
 
+def test_tracey_smoke_positive_residue_demo_surfaces_records_without_changing_final_response() -> None:
+    normal_outputs = run_smoke()
+    demo_outputs = run_smoke(positive_residue_demo=True)
+
+    assert len(normal_outputs) == len(demo_outputs) == 3
+    demo_residue_records = 0
+
+    for normal, demo in zip(normal_outputs, demo_outputs):
+        normal_payload = normal["result"]
+        demo_payload = demo["result"]
+        assert demo_payload["final_response"] == normal_payload["final_response"]
+        assert isinstance(demo_payload["positive_phase_residue"], list)
+        demo_residue_records += len(demo_payload["positive_phase_residue"])
+
+    assert demo_residue_records >= 1
+    assert any(
+        record.get("event_type") in {"coherence_spike", "positive_afterglow", "route_clarity_gain"}
+        for item in demo_outputs
+        for record in item["result"]["positive_phase_residue"]
+    )
+
+
 def test_extract_positive_phase_residue_surfaces_new_and_reactivated_records() -> None:
     result = {
         "final_response": "final text is unaffected",
