@@ -16,6 +16,11 @@ StateMemoryLifecycle = Literal[
 
 StateMemoryEventType = Literal[
     "coherence_drop",
+    "coherence_spike",
+    "resonance_lock",
+    "positive_afterglow",
+    "route_clarity_gain",
+    "self_location_shift",
     "repair_event",
     "wake_degraded",
     "wake_blocked",

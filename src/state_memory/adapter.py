@@ -5,6 +5,14 @@ from typing import Any
 from state_memory.contracts import StateMemoryRecord
 
 
+def _positive_residue_tags(*, base: str, trigger_cue: str = "") -> list[str]:
+    tags = ["positive_residue", "coherence", base]
+    cue = trigger_cue.strip()
+    if cue:
+        tags.append(cue)
+    return tags
+
+
 def records_from_wake_result(
     *,
     wake_result: dict[str, Any] | None,
@@ -50,6 +58,17 @@ def records_from_delta(
     scope: str = "runtime/delta",
 ) -> list[StateMemoryRecord]:
     records: list[StateMemoryRecord] = []
+    coherence_shift = float(delta.get("coherence_shift", 0.0) or 0.0)
+    repair_event = bool(delta.get("repair_event", False))
+    mode_shift = str(delta.get("mode_shift", "")).strip()
+    trigger_cue = str(delta.get("trigger_cue", ""))
+    bounded_evidence = {
+        "coherence_shift": coherence_shift,
+        "trigger_cue": trigger_cue,
+        "mode_shift": mode_shift,
+        "repair_event": repair_event,
+    }
+
     if bool(delta.get("repair_event", False)):
         records.append(
             StateMemoryRecord(
@@ -63,7 +82,33 @@ def records_from_delta(
                 tags=["repair", str(delta.get("trigger_cue", ""))],
             )
         )
-    coherence_shift = float(delta.get("coherence_shift", 0.0) or 0.0)
+
+    if coherence_shift > 0.15:
+        records.append(
+            StateMemoryRecord(
+                event_type="coherence_spike",
+                scope=scope,
+                session_id=session_id,
+                summary=f"coherence spike detected ({coherence_shift})",
+                source="delta_log",
+                lifecycle_status="observed",
+                evidence=dict(bounded_evidence),
+                tags=_positive_residue_tags(base="spike", trigger_cue=trigger_cue),
+            )
+        )
+    if repair_event and coherence_shift > 0:
+        records.append(
+            StateMemoryRecord(
+                event_type="positive_afterglow",
+                scope=scope,
+                session_id=session_id,
+                summary=f"repair produced positive afterglow ({coherence_shift})",
+                source="delta_log",
+                lifecycle_status="observed",
+                evidence=dict(bounded_evidence),
+                tags=_positive_residue_tags(base="afterglow", trigger_cue=trigger_cue),
+            )
+        )
     if coherence_shift < 0:
         records.append(
             StateMemoryRecord(
@@ -77,7 +122,21 @@ def records_from_delta(
                 tags=["coherence", "drop"],
             )
         )
-    mode_shift = str(delta.get("mode_shift", "")).strip()
+    mode_shift_lc = mode_shift.lower()
+    route_clarity_markers = ("clear", "clarity", "build->audit", "audit->build", "build/audit", "route")
+    if mode_shift and any(marker in mode_shift_lc for marker in route_clarity_markers):
+        records.append(
+            StateMemoryRecord(
+                event_type="route_clarity_gain",
+                scope=scope,
+                session_id=session_id,
+                summary=f"route clarity increased via mode shift: {mode_shift}",
+                source="delta_log",
+                lifecycle_status="observed",
+                evidence=dict(bounded_evidence),
+                tags=["positive_residue", "route_clarity", "coherence"],
+            )
+        )
     if mode_shift:
         records.append(
             StateMemoryRecord(

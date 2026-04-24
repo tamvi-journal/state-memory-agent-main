@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from state_memory.adapter import records_from_turn, records_from_wake_result
+from state_memory.adapter import records_from_delta, records_from_turn, records_from_wake_result
 from state_memory.compression import compress_state_memories
 from state_memory.contracts import StateMemoryRecord
 from state_memory.reactivation import reactivate_state_memories
@@ -119,3 +119,86 @@ def test_compression_prefers_canonical_duplicate() -> None:
 
     assert len(compact) == 1
     assert compact[0]["record_id"] == "sm_canonical"
+
+
+def test_positive_coherence_shift_creates_coherence_spike() -> None:
+    records = records_from_delta(
+        delta={
+            "repair_event": False,
+            "coherence_shift": 0.2,
+            "mode_shift": "",
+            "trigger_cue": "anchor_reactivation",
+        },
+        session_id="session_a",
+    )
+    spikes = [record for record in records if record.event_type == "coherence_spike"]
+    assert len(spikes) == 1
+    assert spikes[0].lifecycle_status == "observed"
+    assert spikes[0].evidence["coherence_shift"] == 0.2
+    assert "positive_residue" in spikes[0].tags
+
+
+def test_repair_with_positive_shift_creates_positive_afterglow() -> None:
+    records = records_from_delta(
+        delta={
+            "repair_event": True,
+            "coherence_shift": 0.08,
+            "mode_shift": "build->audit alignment",
+            "trigger_cue": "repair_success",
+        },
+        session_id="session_a",
+    )
+    afterglow = [record for record in records if record.event_type == "positive_afterglow"]
+    assert len(afterglow) == 1
+    assert afterglow[0].lifecycle_status == "observed"
+    assert "afterglow" in afterglow[0].tags
+
+
+def test_negative_coherence_shift_still_creates_coherence_drop() -> None:
+    records = records_from_delta(
+        delta={
+            "repair_event": False,
+            "coherence_shift": -0.01,
+            "mode_shift": "",
+            "trigger_cue": "noise",
+        },
+        session_id="session_a",
+    )
+    assert any(record.event_type == "coherence_drop" for record in records)
+    assert all(record.event_type != "coherence_spike" for record in records)
+
+
+def test_compression_does_not_auto_promote_positive_residue_to_canonical() -> None:
+    observed = StateMemoryRecord(
+        event_type="coherence_spike",
+        scope="runtime/delta",
+        summary="coherence spike detected (0.2)",
+        lifecycle_status="observed",
+        evidence={"coherence_shift": 0.2},
+        tags=["positive_residue", "coherence", "spike"],
+    ).to_dict()
+    candidate = dict(observed)
+    candidate["record_id"] = "sm_candidate_spike"
+    candidate["lifecycle_status"] = "candidate"
+    candidate["created_at"] = "2026-01-01T00:00:00+00:00"
+
+    compact = compress_state_memories([observed, candidate])
+    assert len(compact) == 1
+    assert compact[0]["lifecycle_status"] == "candidate"
+    assert compact[0]["event_type"] == "coherence_spike"
+
+
+def test_records_from_turn_can_include_positive_residue_from_delta() -> None:
+    records = records_from_turn(
+        delta={
+            "repair_event": True,
+            "coherence_shift": 0.21,
+            "mode_shift": "build->audit alignment",
+            "trigger_cue": "post_repair_sync",
+        },
+        session_id="session_a",
+    )
+    event_types = {record.event_type for record in records}
+    assert "coherence_spike" in event_types
+    assert "positive_afterglow" in event_types
+    assert "route_clarity_gain" in event_types
