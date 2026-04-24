@@ -19,6 +19,9 @@ from state.live_state import LiveState
 from state_memory.reactivation import reactivate_state_memories
 from state_memory.store import StateMemoryStore
 from state.state_manager import StateManager
+from state_memory.adapter import records_from_turn
+from state_memory.reactivation import reactivate_state_memories
+from state_memory.store import StateMemoryStore
 from tools.market_data_tool import MarketDataTool
 from tracey.tracey_adapter import TraceyAdapter
 from verification.verification_loop import VerificationLoop
@@ -103,6 +106,12 @@ class RuntimeHarness:
             rehydration_pack=normalized_rehydration,
             host_metadata=normalized_host_metadata,
             kernel_options=normalized_kernel_options,
+        )
+        state_memory_reactivated = self._reactivate_state_memories_advisory(
+            user_text=user_text,
+            kernel_options=normalized_kernel_options,
+            rehydration_pack=normalized_rehydration,
+            baton=baton,
         )
         live_state_dict = state_manager.get_state().to_dict()
         sleep_runtime_state = apply_wake_result_to_runtime_state(
@@ -230,6 +239,15 @@ class RuntimeHarness:
                     post_turn_result={"handoff_baton": baton_payload},
                     wake_result=wake_result,
                 )
+            state_memory_path = normalized_kernel_options.get("state_memory_path")
+            state_memory_records_written = self._write_state_memory_records(
+                kernel_options=normalized_kernel_options,
+                wake_result=wake_result,
+                delta=state_manager.get_recent_deltas()[-1].to_dict(),
+                tracey_turn=tracey_turn,
+                rehydration_pack=normalized_rehydration,
+                baton=baton,
+            )
 
             return {
                 "final_response": final_response,
@@ -247,6 +265,9 @@ class RuntimeHarness:
                 "handoff_baton": baton_payload,
                 "observed_outcome": observed_outcome,
                 "events": logger.all_events(),
+                "state_memory_records_written": state_memory_records_written,
+                "state_memory_path": state_memory_path,
+                "state_memory_reactivated": state_memory_reactivated,
             }
 
         if gate_decision.decision not in {"allow", "sandbox_only"} or worker_payload is None or verification_record is None:
@@ -305,6 +326,15 @@ class RuntimeHarness:
                 post_turn_result={"handoff_baton": baton_payload},
                 wake_result=wake_result,
             )
+        state_memory_path = normalized_kernel_options.get("state_memory_path")
+        state_memory_records_written = self._write_state_memory_records(
+            kernel_options=normalized_kernel_options,
+            wake_result=wake_result,
+            delta=state_manager.get_recent_deltas()[-1].to_dict(),
+            tracey_turn=tracey_turn,
+            rehydration_pack=normalized_rehydration,
+            baton=baton,
+        )
 
         return {
             "final_response": final_response,
@@ -322,6 +352,9 @@ class RuntimeHarness:
             "handoff_baton": baton_payload,
             "observed_outcome": observed_outcome,
             "events": logger.all_events(),
+            "state_memory_records_written": state_memory_records_written,
+            "state_memory_path": state_memory_path,
+            "state_memory_reactivated": state_memory_reactivated,
         }
 
     @staticmethod
@@ -569,6 +602,76 @@ class RuntimeHarness:
         if option_mode in {"build", "builder"}:
             return "builder"
         return "user"
+
+    @staticmethod
+    def _derive_session_id(
+        *,
+        rehydration_pack: dict[str, Any],
+        baton: dict[str, Any] | None,
+    ) -> str:
+        return str(
+            rehydration_pack.get("session_id")
+            or rehydration_pack.get("session_title")
+            or (baton or {}).get("session_id")
+            or "",
+        ).strip()
+
+    def _write_state_memory_records(
+        self,
+        *,
+        kernel_options: dict[str, Any],
+        wake_result: dict[str, Any] | None,
+        delta: dict[str, Any] | None,
+        tracey_turn: dict[str, Any] | None,
+        rehydration_pack: dict[str, Any],
+        baton: dict[str, Any] | None,
+    ) -> int:
+        if not bool(kernel_options.get("enable_state_memory", False)):
+            return 0
+        store = StateMemoryStore(kernel_options.get("state_memory_path"))
+        records = records_from_turn(
+            wake_result=wake_result,
+            delta=delta,
+            tracey_turn=tracey_turn,
+            session_id=self._derive_session_id(rehydration_pack=rehydration_pack, baton=baton),
+        )
+        if not records:
+            return 0
+        return store.append_many(records)
+
+    def _reactivate_state_memories_advisory(
+        self,
+        *,
+        user_text: str,
+        kernel_options: dict[str, Any],
+        rehydration_pack: dict[str, Any],
+        baton: dict[str, Any] | None,
+    ) -> list[dict[str, Any]]:
+        if not bool(kernel_options.get("enable_state_memory", False)):
+            return []
+        store = StateMemoryStore(kernel_options.get("state_memory_path"))
+        limit = self._state_memory_reactivation_limit(kernel_options)
+        scope_prefix = str(kernel_options.get("state_memory_scope_prefix", ""))
+        session_id = self._derive_session_id(rehydration_pack=rehydration_pack, baton=baton)
+        records = store.read_recent(limit=max(limit * 10, 20))
+        return reactivate_state_memories(
+            records=records,
+            cue_text=user_text,
+            session_id=session_id,
+            scope_prefix=scope_prefix,
+            limit=limit,
+        )
+
+    @staticmethod
+    def _state_memory_reactivation_limit(kernel_options: dict[str, Any] | None) -> int:
+        raw_limit = (kernel_options or {}).get("state_memory_reactivation_limit", 5)
+        try:
+            parsed = int(raw_limit)
+        except (TypeError, ValueError):
+            return 5
+        if parsed <= 0:
+            return 5
+        return parsed
 
     def _load_sample_macro_signal_payload(self) -> dict[str, Any] | None:
         path = Path(self.sample_macro_signal_path)

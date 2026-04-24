@@ -37,3 +37,28 @@ def test_payload_adapter_builds_internal_invocation_shape() -> None:
     assert invocation["host_metadata"]["channel"] == "desktop"
     assert invocation["kernel_options"]["mode"] == "builder"
     assert invocation["kernel_options"]["include_worker_result"] is True
+
+
+def test_payload_adapter_preserves_state_memory_kernel_options() -> None:
+    request = validate_request_payload(
+        {
+            "schema_version": CONTRACT_SCHEMA_VERSION,
+            "request_id": "req-state-memory",
+            "request_text": "continue",
+            "session": {},
+            "host_metadata": {},
+            "kernel_options": {
+                "enable_state_memory": True,
+                "state_memory_path": "runtime_state/state_memory/custom.jsonl",
+                "state_memory_scope_prefix": "runtime/wake",
+                "state_memory_reactivation_limit": 9,
+            },
+        }
+    )
+
+    invocation = PayloadAdapter().build_internal_invocation(request)
+
+    assert invocation["kernel_options"]["enable_state_memory"] is True
+    assert invocation["kernel_options"]["state_memory_path"] == "runtime_state/state_memory/custom.jsonl"
+    assert invocation["kernel_options"]["state_memory_scope_prefix"] == "runtime/wake"
+    assert invocation["kernel_options"]["state_memory_reactivation_limit"] == 9
