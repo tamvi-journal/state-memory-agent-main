@@ -12,6 +12,7 @@ if str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
 
 from runtime.runtime_harness import RuntimeHarness
+from state_memory.store import StateMemoryStore
 
 
 PROMPTS = (
@@ -20,8 +21,65 @@ PROMPTS = (
     "continue after degraded wake",
 )
 
+POSITIVE_PHASE_EVENT_TYPES = {
+    "coherence_spike",
+    "resonance_lock",
+    "positive_afterglow",
+    "route_clarity_gain",
+    "self_location_shift",
+}
 
-def compact_view(result: dict[str, Any]) -> dict[str, Any]:
+
+def _compact_state_memory_record(record: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "record_id": record.get("record_id"),
+        "event_type": record.get("event_type"),
+        "scope": record.get("scope"),
+        "summary": record.get("summary"),
+        "source": record.get("source"),
+        "lifecycle_status": record.get("lifecycle_status"),
+    }
+
+
+def extract_positive_phase_residue(
+    *,
+    result: dict[str, Any],
+    previously_seen_record_ids: set[str] | None = None,
+    current_state_memory_records: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    positive_records: list[dict[str, Any]] = []
+
+    for field_name in ("reactivated_state_memories", "state_memory_reactivated"):
+        for record in result.get(field_name, []) or []:
+            event_type = str(record.get("event_type", "")).strip()
+            if event_type in POSITIVE_PHASE_EVENT_TYPES:
+                positive_records.append(record)
+
+    known_ids = previously_seen_record_ids or set()
+    for record in current_state_memory_records or []:
+        event_type = str(record.get("event_type", "")).strip()
+        record_id = str(record.get("record_id", "")).strip()
+        if event_type not in POSITIVE_PHASE_EVENT_TYPES:
+            continue
+        if record_id and record_id in known_ids:
+            continue
+        positive_records.append(record)
+
+    deduped: list[dict[str, Any]] = []
+    seen_keys: set[tuple[str, str, str]] = set()
+    for record in positive_records:
+        event_type = str(record.get("event_type", "")).strip()
+        record_id = str(record.get("record_id", "")).strip()
+        summary = str(record.get("summary", "")).strip()
+        dedupe_key = (record_id, event_type, summary)
+        if dedupe_key in seen_keys:
+            continue
+        seen_keys.add(dedupe_key)
+        deduped.append(_compact_state_memory_record(record))
+    return deduped
+
+
+def compact_view(result: dict[str, Any], *, positive_phase_residue: list[dict[str, Any]]) -> dict[str, Any]:
     tracey_turn = result.get("tracey_turn", {})
     return {
         "final_response": result.get("final_response"),
@@ -32,17 +90,27 @@ def compact_view(result: dict[str, Any]) -> dict[str, Any]:
         "wake_result": result.get("wake_result"),
         "reactivated_state_memories": result.get("reactivated_state_memories"),
         "state_memory_records_written": result.get("state_memory_records_written"),
+        "positive_phase_residue": positive_phase_residue,
     }
 
 
 def run_smoke() -> list[dict[str, Any]]:
     harness = RuntimeHarness()
     outputs: list[dict[str, Any]] = []
+    state_memory_path = Path(tempfile.mkdtemp(prefix="tracey_smoke_memory_")) / "state_memory.jsonl"
+    store = StateMemoryStore(memory_path=state_memory_path)
     for prompt in PROMPTS:
-        kwargs: dict[str, Any] = {"user_text": prompt}
+        kwargs: dict[str, Any] = {
+            "user_text": prompt,
+            "kernel_options": {
+                "enable_state_memory": True,
+                "state_memory_path": str(state_memory_path),
+            },
+        }
         if prompt == "continue after degraded wake":
             snapshot_dir = _build_degraded_snapshot_dir()
             kwargs["kernel_options"] = {
+                **kwargs["kernel_options"],
                 "mode": "build",
                 "resume_from_sleep": True,
                 "sleep_snapshot_dir": str(snapshot_dir),
@@ -53,8 +121,23 @@ def run_smoke() -> list[dict[str, Any]]:
                 "current_status": "paused",
             }
 
+        before_record_ids = {
+            str(record.get("record_id", "")).strip()
+            for record in store.read_all()
+            if str(record.get("record_id", "")).strip()
+        }
         result = harness.run(**kwargs)
-        outputs.append({"prompt": prompt, "result": compact_view(result)})
+        positive_phase_residue = extract_positive_phase_residue(
+            result=result,
+            previously_seen_record_ids=before_record_ids,
+            current_state_memory_records=store.read_all(),
+        )
+        outputs.append(
+            {
+                "prompt": prompt,
+                "result": compact_view(result, positive_phase_residue=positive_phase_residue),
+            }
+        )
     return outputs
 
 

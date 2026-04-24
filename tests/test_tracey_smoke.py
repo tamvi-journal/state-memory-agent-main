@@ -16,6 +16,7 @@ assert spec and spec.loader
 tracey_smoke = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(tracey_smoke)
 run_smoke = tracey_smoke.run_smoke
+extract_positive_phase_residue = tracey_smoke.extract_positive_phase_residue
 
 
 def test_tracey_smoke_helper_runs_without_crashing() -> None:
@@ -37,3 +38,36 @@ def test_tracey_smoke_helper_runs_without_crashing() -> None:
         assert "wake_result" in payload
         assert "reactivated_state_memories" in payload
         assert "state_memory_records_written" in payload
+        assert "positive_phase_residue" in payload
+        assert isinstance(payload["positive_phase_residue"], list)
+
+
+def test_extract_positive_phase_residue_surfaces_new_and_reactivated_records() -> None:
+    result = {
+        "final_response": "final text is unaffected",
+        "reactivated_state_memories": [
+            {"record_id": "sm_old_01", "event_type": "coherence_spike", "summary": "reactivated spike", "scope": "runtime/delta"},
+            {"record_id": "sm_old_02", "event_type": "wake_degraded", "summary": "not positive", "scope": "runtime/wake"},
+        ],
+        "state_memory_reactivated": [
+            {"record_id": "sm_old_03", "event_type": "route_clarity_gain", "summary": "reactivated route clarity", "scope": "runtime/delta"},
+        ],
+    }
+    current_state_memory_records = [
+        {"record_id": "sm_old_01", "event_type": "coherence_spike", "summary": "reactivated spike", "scope": "runtime/delta"},
+        {"record_id": "sm_new_01", "event_type": "positive_afterglow", "summary": "new afterglow", "scope": "runtime/delta"},
+        {"record_id": "sm_new_02", "event_type": "mode_shift", "summary": "not positive", "scope": "runtime/delta"},
+    ]
+
+    positive_residue = extract_positive_phase_residue(
+        result=result,
+        previously_seen_record_ids={"sm_old_01", "sm_old_02", "sm_old_03"},
+        current_state_memory_records=current_state_memory_records,
+    )
+    event_types = {record["event_type"] for record in positive_residue}
+
+    assert "coherence_spike" in event_types
+    assert "route_clarity_gain" in event_types
+    assert "positive_afterglow" in event_types
+    assert "mode_shift" not in event_types
+    assert result["final_response"] == "final text is unaffected"
