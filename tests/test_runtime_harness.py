@@ -191,5 +191,8 @@ def test_runtime_harness_applies_wake_resume_constraints(tmp_path: Path) -> None
 
     assert result["wake_result"]["resume_class"] == "degraded_resume"
     assert result["sleep_runtime_state"]["wake_constraints_active"] is True
+    assert result["tracey_turn"]["response_hints"]["wake_resume_class"] == "degraded_resume"
+    assert result["tracey_turn"]["response_hints"]["recognition_active"] is False
+    assert result["tracey_turn"]["response_hints"]["keep_ambiguity_open"] is True
     assert "Wake status: degraded resume." in result["final_response"]
     assert result["handoff_baton"]["monitor_summary"]["wake_resume_class"] == "degraded_resume"

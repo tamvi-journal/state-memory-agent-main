@@ -19,6 +19,7 @@ class TraceyAdapter:
         user_text: str,
         live_state: dict[str, Any],
         monitor_summary: dict[str, Any] | None = None,
+        wake_hints: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         reactivated = self._reactivate_anchors(
             user_text=user_text,
@@ -30,12 +31,14 @@ class TraceyAdapter:
             live_state=live_state,
             monitor_summary=monitor_summary,
             reactivated_anchors=reactivated,
+            wake_hints=wake_hints,
         )
         state_patch = self.runtime_state_patch(
             live_state=live_state,
             monitor_summary=monitor_summary,
             response_hints=response_hints,
             reactivated_anchors=reactivated,
+            wake_hints=wake_hints,
         )
         self._record_ledger_events(
             live_state=live_state,
@@ -56,9 +59,11 @@ class TraceyAdapter:
         live_state: dict[str, Any],
         monitor_summary: dict[str, Any] | None,
         reactivated_anchors: list[dict[str, str]],
+        wake_hints: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         lowered = user_text.strip().lower()
         active_mode = str(live_state.get("active_mode", ""))
+        wake_guidance = self._wake_guidance(wake_hints)
         recognition_active = bool(reactivated_anchors)
         monitor_intervention = self._monitor_intervention(monitor_summary)
         build_mode_active = active_mode == "build"
@@ -72,8 +77,29 @@ class TraceyAdapter:
             user_text=lowered,
         )
 
+        if wake_guidance["resume_class"] == "degraded_resume":
+            recognition_active = False
+            keep_ambiguity_open = True
+            ambiguity_posture = "exploratory"
+
+        if wake_guidance["resume_class"] == "clarify_first":
+            recognition_active = False
+            keep_ambiguity_open = True
+            ambiguity_posture = "blocking"
+
+        if wake_guidance["resume_class"] == "blocked":
+            recognition_active = False
+            keep_ambiguity_open = False
+            ambiguity_posture = "blocking"
+
         tone_constraint = "none"
-        if build_mode_active:
+        if wake_guidance["resume_class"] == "blocked":
+            tone_constraint = "wake_blocked"
+        elif wake_guidance["resume_class"] == "clarify_first":
+            tone_constraint = "wake_clarify_first"
+        elif wake_guidance["resume_class"] == "degraded_resume":
+            tone_constraint = "wake_degraded"
+        elif build_mode_active:
             tone_constraint = "build_exact"
         elif ambiguity_posture == "exploratory":
             tone_constraint = "warm_but_exact"
@@ -90,6 +116,10 @@ class TraceyAdapter:
             "verification_before_completion": verification_before_completion,
             "build_mode_active": build_mode_active,
             "tone_constraint": tone_constraint,
+            "wake_resume_class": wake_guidance["resume_class"],
+            "wake_constraints_active": wake_guidance["wake_constraints_active"],
+            "requires_revalidation": wake_guidance["requires_revalidation"],
+            "forbidden_claims": wake_guidance["forbidden_claims"],
         }
 
     def runtime_state_patch(
@@ -99,7 +129,9 @@ class TraceyAdapter:
         monitor_summary: dict[str, Any] | None,
         response_hints: dict[str, Any],
         reactivated_anchors: list[dict[str, str]],
+        wake_hints: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        wake_guidance = self._wake_guidance(wake_hints)
         return {
             "tracey_mode_hint": str(live_state.get("active_mode", "unknown")) or "unknown",
             "tracey_recognition_signal": bool(response_hints.get("recognition_active", False)),
@@ -107,6 +139,22 @@ class TraceyAdapter:
             "tracey_reactivated_count": len(reactivated_anchors),
             "tracey_build_mode_active": bool(response_hints.get("build_mode_active", False)),
             "tracey_response_constraint": str(response_hints.get("tone_constraint", "none")),
+            "tracey_wake_resume_class": wake_guidance["resume_class"],
+            "tracey_wake_constraints_active": wake_guidance["wake_constraints_active"],
+            "tracey_wake_requires_revalidation": wake_guidance["requires_revalidation"],
+            "tracey_wake_forbidden_claims": wake_guidance["forbidden_claims"],
+        }
+
+    @staticmethod
+    def _wake_guidance(wake_hints: dict[str, Any] | None) -> dict[str, Any]:
+        hints = dict(wake_hints or {})
+        resume_class = str(hints.get("resume_class", "full_resume"))
+        constraints_active = bool(hints.get("wake_constraints_active", resume_class != "full_resume"))
+        return {
+            "resume_class": resume_class,
+            "wake_constraints_active": constraints_active,
+            "requires_revalidation": list(hints.get("requires_revalidation", [])),
+            "forbidden_claims": list(hints.get("forbidden_claims", [])),
         }
 
     def _reactivate_anchors(

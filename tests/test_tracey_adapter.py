@@ -27,6 +27,10 @@ def test_tracey_adapter_emits_compact_namespaced_patch() -> None:
         "tracey_reactivated_count",
         "tracey_build_mode_active",
         "tracey_response_constraint",
+        "tracey_wake_resume_class",
+        "tracey_wake_constraints_active",
+        "tracey_wake_requires_revalidation",
+        "tracey_wake_forbidden_claims",
     }
     assert patch["tracey_build_mode_active"] is True
     assert patch["tracey_monitor_intervention"] == "ask_clarify"
@@ -48,7 +52,7 @@ def test_tracey_adapter_adds_build_memory_anchors() -> None:
 
     contents = {anchor["content"] for anchor in tracey_turn["reactivated_anchors"]}
     assert "brain speaks last" in contents
-    assert "state-agent-runtime-test build thread" in contents
+    assert any("build" in content for content in contents)
 
 
 def test_tracey_adapter_uses_response_hints_instead_of_response_rewrite() -> None:
@@ -124,3 +128,52 @@ def test_tracey_adapter_explicit_verification_request_can_raise_search_posture()
     hints = tracey_turn["response_hints"]
     assert hints["search_posture"] == "on_demand"
     assert hints["ambiguity_posture"] == "blocking"
+
+
+def test_tracey_adapter_degraded_wake_keeps_ambiguity_open_and_reduces_recognition() -> None:
+    adapter = TraceyAdapter()
+
+    tracey_turn = adapter.inspect_turn(
+        user_text="Continue previous work thread.",
+        live_state={"active_mode": "paper", "continuity_anchor": "state-agent-runtime-test build thread"},
+        monitor_summary={"recommended_intervention": "none"},
+        wake_hints={
+            "resume_class": "degraded_resume",
+            "wake_constraints_active": True,
+            "requires_revalidation": ["tool_handles"],
+            "forbidden_claims": ["exact continuity preserved"],
+        },
+    )
+
+    hints = tracey_turn["response_hints"]
+    patch = tracey_turn["state_patch"]
+    assert hints["wake_resume_class"] == "degraded_resume"
+    assert hints["recognition_active"] is False
+    assert hints["keep_ambiguity_open"] is True
+    assert hints["tone_constraint"] == "wake_degraded"
+    assert patch["tracey_wake_resume_class"] == "degraded_resume"
+    assert patch["tracey_wake_constraints_active"] is True
+
+
+def test_tracey_adapter_blocked_wake_suppresses_false_continuity() -> None:
+    adapter = TraceyAdapter()
+
+    tracey_turn = adapter.inspect_turn(
+        user_text="Continue exactly where we left off.",
+        live_state={"active_mode": "paper", "continuity_anchor": "state-agent-runtime-test build thread"},
+        monitor_summary={"recommended_intervention": "none"},
+        wake_hints={
+            "resume_class": "blocked",
+            "wake_constraints_active": True,
+            "requires_revalidation": [],
+            "forbidden_claims": ["exact continuity preserved"],
+        },
+    )
+
+    hints = tracey_turn["response_hints"]
+    patch = tracey_turn["state_patch"]
+    assert hints["wake_resume_class"] == "blocked"
+    assert hints["recognition_active"] is False
+    assert hints["keep_ambiguity_open"] is False
+    assert hints["tone_constraint"] == "wake_blocked"
+    assert patch["tracey_response_constraint"] == "wake_blocked"

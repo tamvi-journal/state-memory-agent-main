@@ -12,7 +12,7 @@ from monitor.monitor_layer import MonitorLayer
 from observability.logger import EventLogger
 from observability.trace_events import TraceEvents
 from runtime.request_router import RequestRouter
-from sleep.integration import apply_wake_result_to_runtime_state, rebuild_baton_after_wake
+from sleep.integration import apply_wake_result_to_runtime_state, build_tracey_wake_hints, rebuild_baton_after_wake
 from sleep.sleep_mode import wake_restore
 from state.delta_log import DeltaRecord
 from state.live_state import LiveState
@@ -141,6 +141,7 @@ class RuntimeHarness:
             user_text=user_text,
             live_state=sleep_runtime_state,
             monitor_summary=pre_monitor_summary,
+            wake_hints=build_tracey_wake_hints(wake_result) if wake_result else None,
         )
 
         gate_decision = gate.decide(action_name=interpreted["task_type"])
