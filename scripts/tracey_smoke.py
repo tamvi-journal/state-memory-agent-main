@@ -47,6 +47,7 @@ def extract_positive_phase_residue(
     result: dict[str, Any],
     previously_seen_record_ids: set[str] | None = None,
     current_state_memory_records: list[dict[str, Any]] | None = None,
+    demo_positive_residue_records: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     positive_records: list[dict[str, Any]] = []
 
@@ -66,12 +67,23 @@ def extract_positive_phase_residue(
             continue
         positive_records.append(record)
 
+    for record in demo_positive_residue_records or []:
+        event_type = str(record.get("event_type", "")).strip()
+        if event_type not in POSITIVE_PHASE_EVENT_TYPES:
+            continue
+        positive_records.append(record)
+
     deduped: list[dict[str, Any]] = []
+    seen_record_ids: set[str] = set()
     seen_keys: set[tuple[str, str, str]] = set()
     for record in positive_records:
         event_type = str(record.get("event_type", "")).strip()
         record_id = str(record.get("record_id", "")).strip()
         summary = str(record.get("summary", "")).strip()
+        if record_id:
+            if record_id in seen_record_ids:
+                continue
+            seen_record_ids.add(record_id)
         dedupe_key = (record_id, event_type, summary)
         if dedupe_key in seen_keys:
             continue
@@ -144,6 +156,7 @@ def run_smoke(*, positive_residue_demo: bool = False) -> list[dict[str, Any]]:
     outputs: list[dict[str, Any]] = []
     state_memory_path = Path(tempfile.mkdtemp(prefix="tracey_smoke_memory_")) / "state_memory.jsonl"
     store = StateMemoryStore(memory_path=state_memory_path)
+    demo_positive_residue_records: list[dict[str, Any]] = []
     demo_seed_written = False
     for prompt in PROMPTS:
         kwargs: dict[str, Any] = {
@@ -173,13 +186,15 @@ def run_smoke(*, positive_residue_demo: bool = False) -> list[dict[str, Any]]:
             if str(record.get("record_id", "")).strip()
         }
         if positive_residue_demo and not demo_seed_written:
-            store.append_many(_positive_residue_demo_records())
+            demo_positive_residue_records = _positive_residue_demo_records()
+            store.append_many(demo_positive_residue_records)
             demo_seed_written = True
         result = harness.run(**kwargs)
         positive_phase_residue = extract_positive_phase_residue(
             result=result,
             previously_seen_record_ids=before_record_ids,
             current_state_memory_records=store.read_all(),
+            demo_positive_residue_records=demo_positive_residue_records,
         )
         outputs.append(
             {

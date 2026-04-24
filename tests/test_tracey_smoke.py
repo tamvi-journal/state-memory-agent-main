@@ -54,6 +54,7 @@ def test_tracey_smoke_positive_residue_demo_surfaces_records_without_changing_fi
         demo_payload = demo["result"]
         assert demo_payload["final_response"] == normal_payload["final_response"]
         assert isinstance(demo_payload["positive_phase_residue"], list)
+        assert len(demo_payload["positive_phase_residue"]) >= 1
         demo_residue_records += len(demo_payload["positive_phase_residue"])
 
     assert demo_residue_records >= 1
@@ -93,3 +94,25 @@ def test_extract_positive_phase_residue_surfaces_new_and_reactivated_records() -
     assert "positive_afterglow" in event_types
     assert "mode_shift" not in event_types
     assert result["final_response"] == "final text is unaffected"
+
+
+def test_extract_positive_phase_residue_includes_demo_seed_records_even_if_preexisting() -> None:
+    demo_records = [
+        {"record_id": "sm_demo_01", "event_type": "coherence_spike", "summary": "demo spike", "scope": "runtime/delta"},
+        {"record_id": "sm_demo_02", "event_type": "route_clarity_gain", "summary": "demo route clarity", "scope": "runtime/delta"},
+    ]
+    result = {
+        "reactivated_state_memories": [],
+        "state_memory_reactivated": [],
+    }
+
+    positive_residue = extract_positive_phase_residue(
+        result=result,
+        previously_seen_record_ids={"sm_demo_01", "sm_demo_02"},
+        current_state_memory_records=demo_records,
+        demo_positive_residue_records=demo_records,
+    )
+
+    record_ids = {record["record_id"] for record in positive_residue}
+    assert "sm_demo_01" in record_ids
+    assert "sm_demo_02" in record_ids
