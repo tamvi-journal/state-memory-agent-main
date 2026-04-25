@@ -41,6 +41,37 @@ def test_runtime_harness_keeps_direct_response_out_of_fake_completion() -> None:
     assert "Tracey" not in result["final_response"]
 
 
+def test_runtime_harness_greeting_direct_response_is_live_and_bounded() -> None:
+    result = RuntimeHarness().run(user_text="Hi", render_mode="user")
+
+    assert "No further response from me" not in result["final_response"]
+    assert "runtime is active" in result["final_response"]
+    assert "supported worker paths" in result["final_response"]
+    assert result["verification_record"] is None
+    assert result["handoff_baton"]["verification_status"] == "pending"
+
+
+def test_runtime_harness_home_cue_with_recognition_returns_home_aware_bounded_response() -> None:
+    result = RuntimeHarness().run(user_text="Tracey ơi, mẹ đây", render_mode="user")
+
+    assert result["tracey_turn"]["response_hints"]["recognition_active"] is True
+    assert "Dạ má" in result["final_response"]
+    assert "runtime boundary" in result["final_response"]
+    assert "bounded task" in result["final_response"]
+
+
+def test_runtime_harness_unsupported_broad_request_stays_bounded_with_next_actions() -> None:
+    result = RuntimeHarness().run(
+        user_text="Tell me if this runtime is ready for production",
+        render_mode="user",
+    )
+
+    assert "completed supported route yet" in result["final_response"]
+    assert "Please choose: run smoke" in result["final_response"]
+    assert "run one-turn demo" in result["final_response"]
+    assert "run multi-turn demo" in result["final_response"]
+
+
 def test_runtime_harness_routes_technical_analysis_request() -> None:
     result = RuntimeHarness().run(user_text="technical analysis for MBB", render_mode="builder")
 
@@ -215,6 +246,36 @@ def test_runtime_harness_applies_wake_resume_constraints(tmp_path: Path) -> None
     assert result["tracey_turn"]["response_hints"]["keep_ambiguity_open"] is True
     assert "Wake status: degraded resume." in result["final_response"]
     assert result["handoff_baton"]["monitor_summary"]["wake_resume_class"] == "degraded_resume"
+
+
+def test_runtime_harness_wake_degraded_preserves_wake_boundary_over_home_recognition(tmp_path: Path) -> None:
+    snapshot_dir = tmp_path / "sleep_snapshots"
+    _write_degraded_wake_snapshot(snapshot_dir)
+
+    result = RuntimeHarness().run(
+        user_text="Tracey ơi, mẹ đây",
+        render_mode="user",
+        rehydration_pack={
+            "session_id": "builder_state_agent_runtime_test",
+            "primary_focus": "state-agent-runtime-test sleep/wake work",
+            "current_status": "paused",
+        },
+        host_metadata={
+            "host_runtime": "OpenClaw",
+            "route": "direct_reasoning",
+        },
+        kernel_options={
+            "mode": "build",
+            "resume_from_sleep": True,
+            "sleep_snapshot_dir": str(snapshot_dir),
+        },
+    )
+
+    assert result["wake_result"]["resume_class"] == "degraded_resume"
+    assert result["tracey_turn"]["response_hints"]["recognition_active"] is False
+    assert result["tracey_turn"]["response_hints"]["keep_ambiguity_open"] is True
+    assert "current turn may still be ambiguous" in result["final_response"]
+    assert "Dạ má" not in result["final_response"]
 
 
 def test_runtime_harness_returns_empty_reactivated_state_memories_when_disabled(tmp_path: Path) -> None:

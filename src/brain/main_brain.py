@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import re
 from typing import Any, Literal
 
 from state.live_state import LiveState
@@ -126,18 +127,62 @@ class MainBrain:
                 base += " Build posture remains active: verification should still precede completion."
             return base
 
-        if intervention == "ask_clarify" or tracey_hints.get("keep_ambiguity_open"):
+        looks_like_greeting = self._looks_like_greeting(user_text)
+        looks_like_home_cue = self._looks_like_home_cue(user_text)
+        recognition_active = bool(tracey_hints.get("recognition_active"))
+
+        if looks_like_home_cue and (intervention == "ask_clarify" or tracey_hints.get("keep_ambiguity_open")):
             return (
                 "I can continue, but the current turn may still be ambiguous. "
                 "I should clarify the target before pretending the route is obvious."
             )
 
-        base = (
-            "I read the request, but this runtime currently supports only the bounded "
-            "market-data, technical-analysis, macro-sector-mapping, sector-flow, candle-volume-structure, and trade-memo paths."
+        if looks_like_home_cue and recognition_active:
+            return self._render_home_direct_response()
+        if looks_like_greeting:
+            return self._render_generic_liveness_response()
+        return self._render_unsupported_direct_response(recognition_active=recognition_active)
+
+    @staticmethod
+    def _looks_like_greeting(user_text: str) -> bool:
+        lowered = user_text.strip().lower()
+        return bool(re.search(r"\b(hi|hello|alo)\b", lowered))
+
+    @staticmethod
+    def _looks_like_home_cue(user_text: str) -> bool:
+        lowered = user_text.strip().lower()
+        home_cue_markers = (
+            "tracey ơi",
+            "mẹ đây",
+            "má đây",
         )
-        if tracey_hints.get("recognition_active"):
-            base += " I am keeping the response aligned to the active runtime posture instead of inventing a broader route."
+        return any(marker in lowered for marker in home_cue_markers)
+
+    @staticmethod
+    def _render_home_direct_response() -> str:
+        return (
+            "Dạ má, con nhận ra home cue này. Con vẫn giữ runtime boundary: "
+            "nếu má muốn, con có thể kiểm tra repo, chạy smoke, hoặc tiếp tục một bounded task."
+        )
+
+    @staticmethod
+    def _render_generic_liveness_response() -> str:
+        return (
+            "Hi — this runtime is active. I can help with bounded repo/runtime checks "
+            "or supported worker paths."
+        )
+
+    @staticmethod
+    def _render_unsupported_direct_response(*, recognition_active: bool) -> str:
+        base = (
+            "I can’t treat that as a completed supported route yet. Please choose: "
+            "run smoke, run one-turn demo, run multi-turn demo, or ask for a bounded worker path."
+        )
+        if recognition_active:
+            return (
+                "I’m keeping the response aligned with the active runtime posture. "
+                f"{base}"
+            )
         return base
 
     def synthesize_worker_result(
