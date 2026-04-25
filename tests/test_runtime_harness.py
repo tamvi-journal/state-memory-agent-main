@@ -1,11 +1,24 @@
 from __future__ import annotations
 
 import json
+import importlib.util
+import sys
 from pathlib import Path
 
 from runtime.runtime_harness import RuntimeHarness
 from state_memory.contracts import StateMemoryRecord
 from state_memory.store import StateMemoryStore
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+_demo_spec = importlib.util.spec_from_file_location("demo_multi_turn_script", REPO_ROOT / "scripts" / "demo_multi_turn.py")
+assert _demo_spec and _demo_spec.loader
+demo_multi_turn = importlib.util.module_from_spec(_demo_spec)
+_demo_spec.loader.exec_module(demo_multi_turn)
+run_multi_turn_demo = demo_multi_turn.run_multi_turn_demo
 
 
 def test_runtime_harness_runs_the_single_worker_spine() -> None:
@@ -422,3 +435,42 @@ def test_runtime_harness_invalid_reactivation_limit_falls_back_without_crashing(
         assert result["handoff_baton"] == baseline["handoff_baton"]
         assert result["reactivated_state_memories"]
         assert len(result["reactivated_state_memories"]) == 1
+
+
+def test_demo_multi_turn_helper_runs_without_crashing() -> None:
+    outputs = run_multi_turn_demo()
+
+    assert len(outputs) == 3
+    assert [item["input"] for item in outputs] == [
+        "Load MBB daily data",
+        "continue from there",
+        "tell me if this runtime is ready for production",
+    ]
+
+
+def test_demo_multi_turn_passes_baton_from_turn_1_to_turn_2() -> None:
+    outputs = run_multi_turn_demo()
+
+    assert outputs[0]["baton_out"]
+    assert outputs[1]["baton_in"] == outputs[0]["baton_out"]
+
+
+def test_demo_multi_turn_compact_output_includes_expected_fields() -> None:
+    outputs = run_multi_turn_demo()
+
+    expected_fields = {
+        "turn",
+        "input",
+        "final_response",
+        "gate_decision",
+        "verification_status",
+        "handoff_baton.task_focus",
+        "handoff_baton.next_hint",
+        "tracey_turn.response_hints",
+        "state_memory_records_written",
+        "reactivated_state_memories_count",
+    }
+
+    for item in outputs:
+        compact = item["compact"]
+        assert expected_fields.issubset(compact.keys())
