@@ -48,18 +48,18 @@ This harness keeps the active runtime intentionally small:
 - **Main Brain** synthesizes the final outward response
 - **Monitor Layer** checks drift, ambiguity, fake progress, and mode decay
 - **Execution Gate** decides `allow` / `sandbox_only` / `needs_approval` / `deny`
-- **Tools Layer** holds bounded execution units used by workers
 - **Verification Loop** separates intention, execution, and observed result
-- **Baton Handoff** is the only active carryover memory
+- **Baton Handoff** carries forward compact next-turn posture
+- **Advisory State Memory** supports bounded reactivation hints
+- **Tracey Layer** is active for posture/memory/lineage hints, and stays bounded under the same single-brain runtime
 - **OpenClaw Pack** is a thin adapter surface, not a second runtime
 
-What is **not** active anymore:
+What is **not** active in the runnable path:
 
-- Tracey / Seyn child runtime paths
 - dual-brain orchestration
-- family ontology in the runnable path
-- archive-driven memory
-- checkpoint / tier memory systems
+- family ontology as control flow
+- archive-first memory orchestration
+- checkpoint / tier memory systems as primary runtime state
 - server / webhook infrastructure as the center of the runtime
 
 ---
@@ -361,15 +361,32 @@ src/
   context/
   gate/
   handoff/
+  integration/
   monitor/
   observability/
   openclaw_pack/
   runtime/
+  sleep/
   state/
+  state_memory/
   tools/
+  tracey/
   verification/
   workers/
 ```
+
+## Active module scope (quick map)
+
+- `src/runtime/` = runtime harness orchestration spine
+- `src/brain/` = request interpretation and synthesis
+- `src/monitor/` = drift / fake-progress / mode-risk observation
+- `src/gate/` = permission boundary before action
+- `src/verification/` = intended vs executed vs verified separation
+- `src/handoff/` = baton and carryover packaging
+- `src/state_memory/` = advisory state memory (write/reactivation helpers)
+- `src/tracey/` = active Tracey posture/memory/lineage layer, not a second brain
+- `src/integration/` = host payload normalization and external entrypoint boundary
+- `src/observability/` = runtime logging and trace visibility
 
 ---
 
