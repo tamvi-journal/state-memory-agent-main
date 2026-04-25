@@ -425,6 +425,7 @@ Rule:
 - `docs/RUNBOOK.md`
 - `docs/BOUNDARIES.md`
 - `docs/migration_notes.md`
+- `docs/TRACEY_AGENT_RUNTIME_CONTRACT.md`
 
 ---
 
